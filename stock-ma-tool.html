@@ -1,0 +1,1147 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>A股均线测算工具</title>
+<style>
+:root {
+  --bg: #f5f6f8;
+  --card-bg: #ffffff;
+  --text: #1a1a2e;
+  --text-secondary: #6b7280;
+  --border: #e5e7eb;
+  --primary: #2563eb;
+  --primary-hover: #1d4ed8;
+  --danger: #16a34a;
+  --win: #dc2626;
+  --green: #16a34a;
+  --shadow: 0 1px 3px rgba(0,0,0,0.08);
+  --radius: 8px;
+  --input-bg: #ffffff;
+  --table-header: #f9fafb;
+  --table-stripe: #f9fafb;
+  --toast-bg: #1f2937;
+  --toast-text: #ffffff;
+  --dropdown-bg: #ffffff;
+  --dropdown-hover: #f3f4f6;
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+}
+[data-theme="dark"] {
+  --bg: #0f172a;
+  --card-bg: #1e293b;
+  --text: #e2e8f0;
+  --text-secondary: #94a3b8;
+  --border: #334155;
+  --primary: #3b82f6;
+  --primary-hover: #60a5fa;
+  --shadow: 0 1px 3px rgba(0,0,0,0.3);
+  --input-bg: #1e293b;
+  --table-header: #1e293b;
+  --table-stripe: #0f172a;
+  --toast-bg: #e2e8f0;
+  --toast-text: #0f172a;
+  --dropdown-bg: #1e293b;
+  --dropdown-hover: #334155;
+}
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.5;
+  min-height: 100vh;
+  padding-bottom: var(--safe-bottom);
+  transition: background 0.3s, color 0.3s;
+}
+.header {
+  background: var(--card-bg);
+  border-bottom: 1px solid var(--border);
+  padding: 12px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  box-shadow: var(--shadow);
+}
+.header h1 { font-size: 18px; font-weight: 600; }
+.theme-toggle {
+  width: 40px; height: 40px;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: var(--card-bg);
+  color: var(--text);
+  font-size: 20px;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  transition: background 0.2s;
+  flex-shrink: 0;
+}
+.theme-toggle:hover { background: var(--dropdown-hover); }
+.container { max-width: 1400px; margin: 0 auto; padding: 16px; }
+.input-section {
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px;
+  margin-bottom: 16px;
+  box-shadow: var(--shadow);
+}
+.input-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: flex-end; }
+.input-group { display: flex; flex-direction: column; gap: 4px; flex: 1; min-width: 120px; }
+.input-group label { font-size: 13px; color: var(--text-secondary); font-weight: 500; }
+.input-wrapper { position: relative; display: flex; gap: 4px; }
+.input-wrapper input {
+  flex: 1; padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-size: 15px;
+  background: var(--input-bg);
+  color: var(--text);
+  outline: none;
+  transition: border-color 0.2s;
+}
+.input-wrapper input:focus { border-color: var(--primary); }
+.input-wrapper input::placeholder { color: var(--text-secondary); opacity: 0.6; }
+.autocomplete-list {
+  position: absolute; top: 100%; left: 0; right: 0;
+  background: var(--dropdown-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  max-height: 200px; overflow-y: auto;
+  z-index: 200; display: none;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.12);
+}
+.autocomplete-list.show { display: block; }
+.autocomplete-item {
+  padding: 8px 12px; cursor: pointer;
+  font-size: 14px;
+  display: flex; justify-content: space-between; gap: 8px;
+}
+.autocomplete-item:hover, .autocomplete-item.active { background: var(--dropdown-hover); }
+.autocomplete-item .stock-name { color: var(--text-secondary); font-size: 12px; }
+.btn {
+  padding: 10px 20px; border: none; border-radius: var(--radius);
+  font-size: 14px; font-weight: 500; cursor: pointer;
+  white-space: nowrap; transition: background 0.2s, transform 0.1s;
+}
+.btn:active { transform: scale(0.97); }
+.btn-primary { background: var(--primary); color: #fff; }
+.btn-primary:hover { background: var(--primary-hover); }
+.btn-secondary { background: var(--border); color: var(--text); }
+.btn-secondary:hover { opacity: 0.85; }
+.status-bar {
+  display: flex; align-items: center; gap: 12px;
+  padding: 10px 12px;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  margin-bottom: 16px;
+  font-size: 13px; flex-wrap: wrap;
+  box-shadow: var(--shadow);
+}
+.status-bar .stock-name-display { font-weight: 600; font-size: 15px; }
+.status-bar .price-display { color: var(--text-secondary); }
+.ma-inline {
+  display: inline-flex; gap: 8px; font-size: 12px;
+  background: var(--bg); border: 1px solid var(--border);
+  border-radius: 4px; padding: 2px 8px; margin-left: 4px;
+}
+.ma-inline span { white-space: nowrap; }
+.ma-inline .ma-val.ma-above { color: var(--win); } /* MA above price */
+.ma-inline .ma-val.ma-below { color: var(--danger); } /* MA below price */
+.status-tag {
+  display: inline-block; padding: 2px 8px;
+  border-radius: 4px; font-size: 11px; font-weight: 500;
+}
+.tag-intraday { background: #fef3c7; color: #92400e; }
+.tag-closed { background: #dbeafe; color: #1e40af; }
+[data-theme="dark"] .tag-intraday { background: #422006; color: #fbbf24; }
+[data-theme="dark"] .tag-closed { background: #172554; color: #60a5fa; }
+.loading-overlay {
+  display: none; position: fixed; inset: 0;
+  background: rgba(0,0,0,0.4); z-index: 999;
+  align-items: center; justify-content: center;
+}
+.loading-overlay.show { display: flex; }
+.loading-box {
+  background: var(--card-bg); border-radius: var(--radius);
+  padding: 32px 40px; text-align: center;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.2);
+}
+.spinner {
+  width: 40px; height: 40px;
+  border: 3px solid var(--border);
+  border-top-color: var(--primary);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  margin: 0 auto 12px;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+.error-toast {
+  display: none; position: fixed;
+  bottom: 24px; left: 50%; transform: translateX(-50%);
+  background: var(--toast-bg); color: var(--toast-text);
+  padding: 12px 24px; border-radius: var(--radius);
+  font-size: 14px; z-index: 1000;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.3);
+  max-width: 90vw; text-align: center;
+}
+.error-toast.show { display: block; }
+.result-section { display: none; }
+.result-section.show { display: block; }
+.result-header {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 12px; flex-wrap: wrap; gap: 8px;
+}
+.result-header h2 { font-size: 16px; font-weight: 600; }
+.copy-btn {
+  padding: 6px 14px; font-size: 13px;
+  background: var(--primary); color: #fff;
+  border: none; border-radius: var(--radius);
+  cursor: pointer; transition: background 0.2s;
+}
+.copy-btn:hover { opacity: 0.9; }
+.tables-wrapper { display: grid; grid-template-columns: 1fr; gap: 16px; }
+.dual-tables { display: flex; gap: 12px; }
+.dual-col { flex: 1; }
+.data-table-half { min-width: 0; font-size: 12px; }
+.data-table-half th { padding: 6px 8px; font-size: 11px; }
+.data-table-half td { padding: 5px 8px; font-size: 12px; }
+.chart-card {
+  grid-column: 1 / -1;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  box-shadow: var(--shadow);
+}
+.chart-card .table-card-title { cursor: pointer; user-select: none; }
+.chart-card .table-card-title:hover { opacity: 0.85; }
+.chart-card .table-card-title .toggle-icon { float: right; font-size: 12px; }
+.chart-canvas-wrap { padding: 12px; display: none; }
+.chart-canvas-wrap.show { display: block; }
+.chart-canvas-wrap canvas { width: 100%; height: 360px; display: block; }
+@media (max-width: 768px) {
+  .chart-canvas-wrap canvas { height: 280px; }
+}
+.table-card {
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  box-shadow: var(--shadow);
+}
+.table-card-title {
+  padding: 12px 16px;
+  font-size: 14px; font-weight: 600;
+  border-bottom: 1px solid var(--border);
+  background: var(--table-header);
+}
+.table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.data-table {
+  width: 100%; border-collapse: collapse;
+  font-size: 13px; table-layout: fixed; min-width: 480px;
+}
+.data-table th {
+  padding: 8px 10px; text-align: center;
+  background: var(--table-header);
+  font-weight: 600; color: var(--text-secondary);
+  border-bottom: 1px solid var(--border);
+  font-size: 12px; white-space: nowrap;
+}
+.data-table td {
+  padding: 7px 10px; text-align: center;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+.data-table tbody tr:nth-child(even) { background: var(--table-stripe); }
+.data-table tbody tr:hover { background: var(--dropdown-hover); }
+.data-table tbody tr.change-row { cursor: pointer; }
+.data-table tbody tr.selected-row { background: var(--dropdown-hover); box-shadow: inset 3px 0 0 var(--primary); }
+.price-win { color: var(--win); font-weight: 500; }
+.price-loss { color: var(--danger); font-weight: 500; }
+.price-base { color: var(--text); font-weight: 600; }
+.empty-state {
+  text-align: center; padding: 48px 24px;
+  color: var(--text-secondary);
+}
+.empty-state .icon { font-size: 48px; margin-bottom: 12px; }
+.empty-state p { font-size: 14px; }
+@media (max-width: 768px) {
+  .container { padding: 12px; }
+  .input-row { flex-direction: column; }
+  .input-group { min-width: 100%; }
+  .btn { width: 100%; text-align: center; }
+  .tables-wrapper { grid-template-columns: 1fr; }
+  .data-table { min-width: 420px; font-size: 12px; }
+  .data-table th, .data-table td { padding: 6px 8px; font-size: 11px; }
+  .header h1 { font-size: 16px; }
+  .status-bar { font-size: 12px; }
+}
+.data-table::-webkit-scrollbar { height: 4px; }
+.data-table::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+.autocomplete-list::-webkit-scrollbar { width: 4px; }
+.autocomplete-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+</style>
+</head>
+<body>
+
+<header class="header">
+  <h1>A股均线测算工具</h1>
+  <button class="theme-toggle" id="themeToggle" title="切换主题">&#9790;</button>
+</header>
+
+<div class="container">
+  <div class="input-section">
+    <div class="input-row">
+      <div class="input-group" style="flex:2;">
+        <label for="stockInput">股票代码（6位数字）</label>
+        <div class="input-wrapper">
+          <input type="text" id="stockInput" placeholder="例：600519" maxlength="6" inputmode="numeric" autocomplete="off">
+          <div class="autocomplete-list" id="autocompleteList"></div>
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;">
+        <button class="btn btn-primary" id="queryBtn">查询</button>
+        <button class="btn btn-secondary" id="clearBtn">清空</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="status-bar" id="statusBar" style="display:none;"></div>
+
+  <div class="result-section" id="resultSection">
+    <div class="result-header">
+      <h2 id="resultTitle">均线测算结果</h2>
+      <button class="copy-btn" id="copyBtn">复制表格数据</button>
+    </div>
+    <div class="tables-wrapper" id="tablesWrapper"></div>
+    <div id="chartArea"></div>
+  </div>
+
+  <div class="empty-state" id="emptyState">
+    <div class="icon">&#128202;</div>
+    <p>请输入6位股票代码，点击查询获取均线测算结果</p>
+  </div>
+</div>
+
+<div class="loading-overlay" id="loadingOverlay">
+  <div class="loading-box">
+    <div class="spinner"></div>
+    <p id="loadingText">正在获取数据...</p>
+  </div>
+</div>
+
+<div class="error-toast" id="errorToast"></div>
+
+<script>
+(function() {
+  'use strict';
+
+  /* ===== State ===== */
+  var historyCache = [];
+  var lastResultText = '';
+  var stockName = '';
+  var closePrice = 0;
+  var marketStatus = '';
+  var historyPrices = [];
+  var sourceName = '';
+  var chartRawKlines = [];   // cached OHLC klines for chart
+  var chartBasePrices = [];  // cached historical prices for MA calc
+  var selectedPct = 0;       // currently selected % change
+
+  /* ===== DOM ===== */
+  var stockInput = document.getElementById('stockInput');
+  var queryBtn = document.getElementById('queryBtn');
+  var clearBtn = document.getElementById('clearBtn');
+  var themeToggle = document.getElementById('themeToggle');
+  var statusBar = document.getElementById('statusBar');
+  var resultSection = document.getElementById('resultSection');
+  var tablesWrapper = document.getElementById('tablesWrapper');
+  var chartArea = document.getElementById('chartArea');
+  var resultTitle = document.getElementById('resultTitle');
+  var copyBtn = document.getElementById('copyBtn');
+  var emptyState = document.getElementById('emptyState');
+  var loadingOverlay = document.getElementById('loadingOverlay');
+  var loadingText = document.getElementById('loadingText');
+  var errorToast = document.getElementById('errorToast');
+  var autocompleteList = document.getElementById('autocompleteList');
+
+  /* ===== Theme ===== */
+  function initTheme() {
+    var saved = localStorage.getItem('ma-tool-theme');
+    if (saved === 'dark') {
+      document.documentElement.setAttribute('data-theme', 'dark');
+      themeToggle.innerHTML = '&#9788;';
+    } else {
+      document.documentElement.removeAttribute('data-theme');
+      themeToggle.innerHTML = '&#9790;';
+    }
+  }
+  initTheme();
+
+  themeToggle.addEventListener('click', function() {
+    var isDark = document.documentElement.hasAttribute('data-theme');
+    if (isDark) {
+      document.documentElement.removeAttribute('data-theme');
+      themeToggle.innerHTML = '&#9790;';
+      localStorage.setItem('ma-tool-theme', 'light');
+    } else {
+      document.documentElement.setAttribute('data-theme', 'dark');
+      themeToggle.innerHTML = '&#9788;';
+      localStorage.setItem('ma-tool-theme', 'dark');
+    }
+  });
+
+  /* ===== History ===== */
+  function loadHistory() {
+    try {
+      var d = localStorage.getItem('ma-tool-history');
+      historyCache = d ? JSON.parse(d) : [];
+    } catch(e) { historyCache = []; }
+  }
+  loadHistory();
+
+  function saveHistory(code, name) {
+    historyCache = historyCache.filter(function(h) { return h.code !== code; });
+    historyCache.unshift({ code: code, name: name, time: Date.now() });
+    if (historyCache.length > 20) historyCache = historyCache.slice(0, 20);
+    try { localStorage.setItem('ma-tool-history', JSON.stringify(historyCache)); } catch(e) {}
+  }
+
+  /* ===== Autocomplete ===== */
+  function showAutocomplete(val) {
+    if (!val) { autocompleteList.classList.remove('show'); return; }
+    var matches = historyCache.filter(function(h) {
+      return h.code.indexOf(val) !== -1 || val.indexOf(h.code) !== -1;
+    });
+    if (matches.length === 0) { autocompleteList.classList.remove('show'); return; }
+    autocompleteList.innerHTML = matches.map(function(h, i) {
+      return '<div class="autocomplete-item' + (i===0?' active':'') + '" data-code="' + h.code + '" data-name="' + (h.name||'') + '">'
+        + '<span>' + h.code + '</span><span class="stock-name">' + (h.name||'') + '</span></div>';
+    }).join('');
+    autocompleteList.classList.add('show');
+    var items = autocompleteList.querySelectorAll('.autocomplete-item');
+    for (var i = 0; i < items.length; i++) {
+      (function(el) {
+        el.addEventListener('click', function() {
+          stockInput.value = el.dataset.code;
+          autocompleteList.classList.remove('show');
+        });
+      })(items[i]);
+    }
+  }
+
+  stockInput.addEventListener('input', function() {
+    showAutocomplete(stockInput.value.trim());
+  });
+  stockInput.addEventListener('focus', function() {
+    if (stockInput.value.trim()) showAutocomplete(stockInput.value.trim());
+  });
+  document.addEventListener('click', function(e) {
+    if (!e.target.closest('.input-wrapper')) autocompleteList.classList.remove('show');
+  });
+
+  stockInput.addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') { e.preventDefault(); doQuery(); }
+    if (e.key === 'Escape') autocompleteList.classList.remove('show');
+  });
+
+  stockInput.addEventListener('input', function() {
+    stockInput.value = stockInput.value.replace(/[^\d]/g, '');
+  });
+
+  /* ===== Validation ===== */
+  function validateCode(code) {
+    code = code.replace(/\D/g, '');
+    return code.length === 6 ? code : null;
+  }
+
+  /* ===== Market detection ===== */
+  function getMarket(code) {
+    var prefix = code.charAt(0);
+    if (['6','9'].indexOf(prefix) !== -1) return 'sh';
+    if (['0','3','4','8'].indexOf(prefix) !== -1) return 'sz';
+    return null;
+  }
+
+  /* ===== API: Tencent (Primary) ===== */
+  // Single endpoint: web.ifzq.gtimg.cn returns both kline data AND quote info (UTF-8 JSON)
+  // The qt sub-object contains name at index 1, price at index 3
+  function fetchTencentData(code) {
+    var market = getMarket(code);
+    if (!market) return Promise.reject(new Error('不支持的股票代码前缀'));
+    var ticker = market === 'sh' ? 'sh' + code : 'sz' + code;
+    var url = 'https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param=' + ticker + ',day,,,35,qfq';
+    return fetch(url)
+      .then(function(r) { if (!r.ok) throw new Error('腾讯接口 '+r.status); return r.json(); })
+      .then(function(data) {
+        var kd = data.data && data.data[ticker];
+        if (!kd) throw new Error('腾讯接口无此股票数据');
+        
+        // qt is an OBJECT, not an array!
+        // qt.ticker[1] = name, qt.ticker[3] = price
+        var qt = kd.qt;
+        if (!qt) throw new Error('腾讯接口quote数据不完整');
+        var inner = qt[ticker];
+        if (!inner || !Array.isArray(inner)) throw new Error('腾讯接口quote数据格式错误');
+        var name = inner[1] || ('股票' + code);
+        var price = parseFloat(inner[3]) || 0;
+        if (!price) throw new Error('腾讯接口解析不到价格');
+        
+        // Extract K-line data
+        var days = kd.qfqday || kd.day || [];
+        if (!Array.isArray(days) || days.length === 0) throw new Error('腾讯kline无日线数据');
+        
+        // Format: [date, open, close, high, low, volume]
+        var prices = [];
+        var klines = [];
+        for (var i = 0; i < days.length; i++) {
+          if (!days[i] || !Array.isArray(days[i]) || days[i].length < 3) continue;
+          if (typeof days[i][2] === 'object') continue;
+          var p = parseFloat(days[i][2]);
+          if (!isNaN(p)) prices.push(p);
+          // Build OHLC for chart
+          klines.push({
+            date: days[i][0],
+            open: parseFloat(days[i][1]) || p,
+            close: p,
+            high: parseFloat(days[i][3]) || p,
+            low: parseFloat(days[i][4]) || p
+          });
+        }
+        if (prices.length === 0) throw new Error('腾讯kline解析不到收盘价');
+        
+        return { name: name, price: price, prices: prices, klines: klines };
+      });
+  }
+
+  /* ===== Fetch with retry ===== */
+  // Only use Tencent API — single request returns name + price + klines (all UTF-8 JSON)
+  function fetchAllData(code) {
+    return new Promise(function(resolve, reject) {
+      var timer = setTimeout(function() {
+        reject(new Error('数据请求超时，请检查网络连接'));
+      }, 8000);
+
+      fetchTencentData(code)
+        .then(function(result) {
+          clearTimeout(timer);
+          if (result && result.prices && result.prices.length > 0) {
+            resolve({ 
+              prices: result.prices, 
+              klines: result.klines,
+              name: result.name, 
+              source: '腾讯', 
+              quotePrice: result.price 
+            });
+          } else {
+            reject(new Error('未获取到有效数据，请检查股票代码是否正确'));
+          }
+        })
+        .catch(function(err) {
+          clearTimeout(timer);
+          reject(new Error('数据获取失败: ' + (err.message || '未知错误')));
+        });
+    });
+  }
+
+  /* ===== K-Line Chart ===== */
+  var _chartData = null; // cached for redraw on resize/theme change
+
+  function drawKLineChart(container, klines, ma5Arr, ma10Arr, ma20Arr, name, code, projectedPrice, highlightIdx) {
+    container.innerHTML = '';
+    _chartData = { klines: klines, ma5Arr: ma5Arr, ma10Arr: ma10Arr, ma20Arr: ma20Arr, name: name, code: code };
+
+    // Title (clickable to toggle)
+    var card = document.createElement('div');
+    card.className = 'chart-card';
+    var title = document.createElement('div');
+    title.className = 'table-card-title';
+    var subtitle = projectedPrice ? ' (预测收盘: ' + projectedPrice.toFixed(2) + ')' : '';
+    title.innerHTML = name + '(' + code + ') K线图与均线<span style="font-size:12px;color:var(--text-secondary);margin-left:8px;">' + subtitle + '</span> <span class="toggle-icon">&#9650;</span>';
+    var canvasWrap = document.createElement('div');
+    canvasWrap.className = 'chart-canvas-wrap';
+    var canvas = document.createElement('canvas');
+    canvas.id = 'klineCanvas';
+    canvasWrap.appendChild(canvas);
+    card.appendChild(title);
+    card.appendChild(canvasWrap);
+    container.appendChild(card);
+
+    // Default: expanded
+    canvasWrap.classList.add('show');
+    title.querySelector('.toggle-icon').innerHTML = '&#9660;';
+    // Wait for layout to settle before rendering canvas
+    setTimeout(function() { requestAnimationFrame(renderChart); }, 100);
+
+    // Toggle handler
+    title.addEventListener('click', function() {
+      canvasWrap.classList.toggle('show');
+      var icon = title.querySelector('.toggle-icon');
+      icon.innerHTML = canvasWrap.classList.contains('show') ? '&#9650;' : '&#9660;';
+      if (canvasWrap.classList.contains('show')) {
+        requestAnimationFrame(renderChart);
+      }
+    });
+
+    function renderChart() {
+      var rect = canvas.parentElement.getBoundingClientRect();
+      var dpr = window.devicePixelRatio || 1;
+      var W = rect.width - 24; // minus padding
+      var H = parseInt(getComputedStyle(canvas).height, 10) || 360;
+      canvas.width = W * dpr;
+      canvas.height = H * dpr;
+      canvas.style.width = W + 'px';
+      canvas.style.height = H + 'px';
+      var ctx = canvas.getContext('2d');
+      ctx.scale(dpr, dpr);
+
+      // Colors
+      var isDark = document.documentElement.hasAttribute('data-theme');
+      var bg = isDark ? '#1e293b' : '#ffffff';
+      var gridColor = isDark ? '#334155' : '#f0f0f0';
+      var textColor = isDark ? '#94a3b8' : '#6b7280';
+      var winColor = '#dc2626';   // red (up)
+      var lossColor = '#16a34a';  // green (down)
+      var ma5Color = '#f59e0b';   // amber
+      var ma10Color = '#8b5cf6';  // purple
+      var ma20Color = '#06b6d4';  // cyan
+      var futureColor = '#ff6b00'; // orange for projected
+
+      ctx.fillStyle = bg;
+      ctx.fillRect(0, 0, W, H);
+
+      var padL = 55, padR = 10, padT = 15, padB = 30;
+      var chartW = W - padL - padR;
+      var chartH = H - padT - padB;
+
+      // Total points: real klines + 1 future
+      var totalPts = klines.length + 1;
+
+      // Collect all prices (kline close + highs + lows + MA lines + projected values)
+      var allVals = [];
+      for (var i = 0; i < klines.length; i++) {
+        var k = klines[i];
+        if (k.high) allVals.push(k.high);
+        if (k.low) allVals.push(k.low);
+        if (k.close) allVals.push(k.close);
+      }
+      if (ma5Arr) for (var i = 0; i < ma5Arr.length; i++) { if (ma5Arr[i] != null) allVals.push(ma5Arr[i]); }
+      if (ma10Arr) for (var i = 0; i < ma10Arr.length; i++) { if (ma10Arr[i] != null) allVals.push(ma10Arr[i]); }
+      if (ma20Arr) for (var i = 0; i < ma20Arr.length; i++) { if (ma20Arr[i] != null) allVals.push(ma20Arr[i]); }
+
+      // Add projected price and projected MAs to scale
+      if (projectedPrice != null && projectedPrice > 0) {
+        allVals.push(projectedPrice);
+        // Compute projected MAs for future day
+        var histLen = historyPrices.length;
+        var futureMA5 = calcProjectedMA(historyPrices, projectedPrice, 5);
+        var futureMA10 = calcProjectedMA(historyPrices, projectedPrice, 10);
+        var futureMA20 = calcProjectedMA(historyPrices, projectedPrice, 20);
+        if (futureMA5 != null) allVals.push(futureMA5);
+        if (futureMA10 != null) allVals.push(futureMA10);
+        if (futureMA20 != null) allVals.push(futureMA20);
+      }
+
+      if (allVals.length === 0) return;
+
+      var minV = Math.min.apply(null, allVals);
+      var maxV = Math.max.apply(null, allVals);
+      var range = maxV - minV || 1;
+      var margin = range * 0.08;
+      minV -= margin;
+      maxV += margin;
+      range = maxV - minV;
+
+      function xPos(i) { return padL + (i + 0.5) / totalPts * chartW; }
+      function yPos(v) { return padT + (1 - (v - minV) / range) * chartH; }
+
+      // Grid lines
+      ctx.strokeStyle = gridColor;
+      ctx.lineWidth = 0.5;
+      var gridLines = 5;
+      for (var g = 0; g <= gridLines; g++) {
+        var y = padT + g / gridLines * chartH;
+        ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(W - padR, y); ctx.stroke();
+        var val = maxV - g / gridLines * range;
+        ctx.fillStyle = textColor;
+        ctx.font = '10px sans-serif';
+        ctx.textAlign = 'right';
+        ctx.fillText(val.toFixed(2), padL - 5, y + 3);
+      }
+
+      // MA legend
+      ctx.font = '11px sans-serif';
+      var lx = padL + 5;
+      var ly = padT + 12;
+      if (ma5Arr) { ctx.fillStyle = ma5Color; ctx.fillText('MA5', lx, ly); lx += ctx.measureText('MA5').width + 12; }
+      if (ma10Arr) { ctx.fillStyle = ma10Color; ctx.fillText('MA10', lx, ly); lx += ctx.measureText('MA10').width + 12; }
+      if (ma20Arr) { ctx.fillStyle = ma20Color; ctx.fillText('MA20', lx, ly); }
+      if (projectedPrice != null) { ctx.fillStyle = futureColor; ctx.fillText('预测', lx, ly); }
+
+      // Draw MA lines (extend to future day)
+      function drawLine(arr, color, extendToFuture, futureVal) {
+        if (!arr) return;
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        var started = false;
+        for (var i = 0; i < arr.length; i++) {
+          if (arr[i] == null) continue;
+          var x = xPos(i), y = yPos(arr[i]);
+          if (!started) { ctx.moveTo(x, y); started = true; }
+          else ctx.lineTo(x, y);
+        }
+        // Extend to future day
+        if (extendToFuture && futureVal != null) {
+          var fx = xPos(arr.length), fy = yPos(futureVal);
+          ctx.lineTo(fx, fy);
+        }
+        ctx.stroke();
+      }
+      drawLine(ma20Arr, ma20Color, !!projectedPrice,
+        projectedPrice != null ? calcProjectedMA(historyPrices, projectedPrice, 20) : null);
+      drawLine(ma10Arr, ma10Color, !!projectedPrice,
+        projectedPrice != null ? calcProjectedMA(historyPrices, projectedPrice, 10) : null);
+      drawLine(ma5Arr, ma5Color, !!projectedPrice,
+        projectedPrice != null ? calcProjectedMA(historyPrices, projectedPrice, 5) : null);
+
+      // Draw vertical separator line between real and future
+      var futureX = xPos(klines.length);
+      ctx.setLineDash([3, 3]);
+      ctx.strokeStyle = isDark ? '#475569' : '#cbd5e1';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(futureX, padT);
+      ctx.lineTo(futureX, padT + chartH);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      // Label "未来"
+      ctx.fillStyle = textColor;
+      ctx.font = '9px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('未来', futureX, padT - 3);
+
+      // Draw candlesticks (real only)
+      var barW = Math.max(2, Math.min(12, chartW / totalPts * 0.6));
+      for (var i = 0; i < klines.length; i++) {
+        var k = klines[i];
+        var open = k.open, close = k.close, high = k.high, low = k.low;
+        var isWin = close >= open;
+        var color = isWin ? winColor : lossColor;
+
+        // Wick
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(xPos(i), yPos(high));
+        ctx.lineTo(xPos(i), yPos(low));
+        ctx.stroke();
+
+        // Body
+        var yOpen = yPos(open), yClose = yPos(close);
+        var bodyTop = Math.min(yOpen, yClose);
+        var bodyH = Math.max(Math.abs(yOpen - yClose), 1);
+        ctx.fillStyle = color;
+        ctx.fillRect(xPos(i) - barW / 2, bodyTop, barW, bodyH);
+      }
+
+      // Draw projected future candlestick (ghost/dashed)
+      if (projectedPrice != null && projectedPrice > 0) {
+        var lastK = klines[klines.length - 1];
+        var prevClose = lastK ? lastK.close : projectedPrice;
+        var isUp = projectedPrice >= prevClose;
+        var fBarW = barW * 1.2;
+        var fx = xPos(klines.length);
+        var yPrev = yPos(prevClose);
+        var yProj = yPos(projectedPrice);
+        var yBodyTop = Math.min(yPrev, yProj);
+        var yBodyBot = Math.max(yPrev, yProj);
+        var bodyH = Math.max(yBodyBot - yBodyTop, 1);
+
+        // Dashed body
+        ctx.save();
+        ctx.setLineDash([3, 2]);
+        ctx.strokeStyle = isUp ? winColor : lossColor;
+        ctx.lineWidth = 1.5;
+        ctx.fillStyle = isUp ? winColor : lossColor;
+        ctx.globalAlpha = 0.5;
+        // Wick
+        ctx.beginPath();
+        ctx.moveTo(fx, yPos(projectedPrice));
+        ctx.lineTo(fx, yBodyTop + bodyH + 5); // extend a bit
+        ctx.stroke();
+        // Body
+        ctx.fillRect(fx - fBarW / 2, yBodyTop, fBarW, bodyH);
+        ctx.restore();
+
+        // Projected MA labels on the right side
+        var futureMA5 = calcProjectedMA(historyPrices, projectedPrice, 5);
+        var futureMA10 = calcProjectedMA(historyPrices, projectedPrice, 10);
+        var futureMA20 = calcProjectedMA(historyPrices, projectedPrice, 20);
+
+        var labelX = fx + fBarW / 2 + 4;
+        ctx.font = 'bold 9px sans-serif';
+        ctx.textAlign = 'left';
+        var ly2 = yBodyTop + 2;
+        if (futureMA5 != null) {
+          ctx.fillStyle = ma5Color;
+          ctx.fillText('MA5:' + futureMA5.toFixed(2), labelX, ly2);
+          ly2 += 12;
+        }
+        if (futureMA10 != null) {
+          ctx.fillStyle = ma10Color;
+          ctx.fillText('MA10:' + futureMA10.toFixed(2), labelX, ly2);
+          ly2 += 12;
+        }
+        if (futureMA20 != null) {
+          ctx.fillStyle = ma20Color;
+          ctx.fillText('MA20:' + futureMA20.toFixed(2), labelX, ly2);
+        }
+      }
+
+      // Date labels (real klines only)
+      ctx.fillStyle = textColor;
+      ctx.font = '9px sans-serif';
+      ctx.textAlign = 'center';
+      var step = Math.max(1, Math.floor(klines.length / 8));
+      for (var i = 0; i < klines.length; i += step) {
+        var label = klines[i].date || '';
+        if (label && label.length > 5) label = label.substr(5); // show MM-DD
+        ctx.fillText(label, xPos(i), H - 5);
+      }
+    }
+
+    // Auto-expand on first render if chart area is visible
+    // Don't auto-expand; user clicks to toggle
+  }
+
+  /* ===== MA Calculation ===== */
+  function calcMA(prices, period) {
+    if (!prices || prices.length < period) return null;
+    var slice = prices.slice(-period);
+    var sum = 0;
+    for (var i = 0; i < slice.length; i++) sum += slice[i];
+    return sum / period;
+  }
+
+  function calcProjectedMA(histPrices, projectedPrice, period) {
+    if (!histPrices || histPrices.length < period - 1) return null;
+    var window = [];
+    var start = histPrices.length - (period - 1);
+    for (var i = start; i < histPrices.length; i++) window.push(histPrices[i]);
+    window.push(projectedPrice);
+    var sum = 0;
+    for (var i = 0; i < window.length; i++) sum += window[i];
+    return sum / period;
+  }
+
+  /* ===== Market Status ===== */
+  function detectMarketStatus() {
+    var now = new Date();
+    var day = now.getDay();
+    if (day === 0 || day === 6) return 'closed';
+    var h = now.getHours();
+    var m = now.getMinutes();
+    var timeMin = h * 60 + m;
+    // Trading: 9:30-11:30 (570-690), 13:00-15:00 (780-900)
+    // Pre-open: 9:15-9:25 (555-565)
+    if ((timeMin >= 570 && timeMin < 690) || (timeMin >= 780 && timeMin < 900) || (timeMin >= 555 && timeMin < 570)) {
+      return 'intraday';
+    }
+    return 'closed';
+  }
+
+  /* ===== Build Change Table ===== */
+  function buildChangeTable(title, prices, basePrice, changes) {
+    chartBasePrices = prices; // cache for chart redraw
+    var html = '<div class="table-card">';
+    html += '<div class="table-card-title">' + title + '</div>';
+    html += '<div class="dual-tables">';
+
+    // Split changes: positive (10..0) and negative (0..-10)
+    var posChanges = changes.filter(function(c) { return c >= 0; });
+    var negChanges = changes.filter(function(c) { return c < 0; });
+
+    html += '<div class="dual-col">';
+    html += buildChangeTableColumn(posChanges, prices, basePrice, true);
+    html += '</div>';
+    html += '<div class="dual-col">';
+    html += buildChangeTableColumn(negChanges, prices, basePrice, false);
+    html += '</div>';
+    html += '</div></div></div>';
+    return html;
+  }
+
+  function buildChangeTableColumn(changes, prices, basePrice, isPositive) {
+    var html = '<table class="data-table data-table-half"><thead><tr>';
+    html += '<th>涨跌幅</th><th>预测收盘价</th><th>MA5</th><th>MA10</th><th>MA20</th>';
+    html += '</tr></thead><tbody>';
+
+    for (var i = 0; i < changes.length; i++) {
+      var pct = changes[i];
+      var projectedPrice = basePrice * (1 + pct / 100);
+      var ma5 = calcProjectedMA(prices, projectedPrice, 5);
+      var ma10 = calcProjectedMA(prices, projectedPrice, 10);
+      var ma20 = calcProjectedMA(prices, projectedPrice, 20);
+
+      var sign = pct >= 0 ? '+' : '';
+      var cls = pct === 0 ? 'price-base' : (pct > 0 ? 'price-win' : 'price-loss');
+      var rowCls = pct === selectedPct ? ' selected-row' : '';
+
+      html += '<tr class="change-row' + rowCls + '" data-pct="' + pct + '">';
+      html += '<td class="' + cls + '"><strong>' + sign + pct + '%</strong></td>';
+      html += '<td class="' + cls + '">' + projectedPrice.toFixed(2) + '</td>';
+      html += '<td>' + (ma5 !== null ? ma5.toFixed(2) : '-') + '</td>';
+      html += '<td>' + (ma10 !== null ? ma10.toFixed(2) : '-') + '</td>';
+      html += '<td>' + (ma20 !== null ? ma20.toFixed(2) : '-') + '</td>';
+      html += '</tr>';
+    }
+
+    html += '</tbody></table>';
+    return html;
+  }
+
+  /* ===== Generate Copy Text ===== */
+  function generateCopyText(name, code, close, status, changes, prices, baseMAs) {
+    var text = name + '(' + code + ') 均线测算\n';
+    text += '最新价: ' + close.toFixed(2) + ' | 状态: ' + (status === 'intraday' ? '盘中' : '已收盘') + '\n';
+    text += '数据源: ' + sourceName + '\n';
+    text += '========================================\n\n';
+
+    var m5s = baseMAs.ma5 ? baseMAs.ma5.toFixed(2) : 'N/A';
+    var m10s = baseMAs.ma10 ? baseMAs.ma10.toFixed(2) : 'N/A';
+    var m20s = baseMAs.ma20 ? baseMAs.ma20.toFixed(2) : 'N/A';
+    text += '当前MA5: ' + m5s + '  MA10: ' + m10s + '  MA20: ' + m20s + '\n\n';
+    text += '涨跌幅\t预测价\tMA5\tMA10\tMA20\n';
+    text += '----------------------------------------\n';
+
+    for (var i = 0; i < changes.length; i++) {
+      var pct = changes[i];
+      var sign = pct >= 0 ? '+' : '';
+      var projP = close * (1 + pct / 100);
+      var ma5v = calcProjectedMA(prices, projP, 5);
+      var ma10v = calcProjectedMA(prices, projP, 10);
+      var ma20v = calcProjectedMA(prices, projP, 20);
+      text += sign + pct + '%\t' + projP.toFixed(2) + '\t'
+        + (ma5v ? ma5v.toFixed(2) : '-') + '\t'
+        + (ma10v ? ma10v.toFixed(2) : '-') + '\t'
+        + (ma20v ? ma20v.toFixed(2) : '-') + '\n';
+    }
+
+    return text;
+  }
+
+  /* ===== Main Query ===== */
+  function doQuery() {
+    var rawCode = stockInput.value.trim();
+    var code = validateCode(rawCode);
+    if (!code) {
+      showError('请输入有效的6位股票代码');
+      stockInput.focus();
+      return;
+    }
+
+    hideError();
+    loadingOverlay.classList.add('show');
+    loadingText.textContent = '正在获取数据...';
+    resultSection.classList.remove('show');
+    statusBar.style.display = 'none';
+    emptyState.style.display = 'none';
+
+    var changes = [];
+    for (var p = -10; p <= 10; p++) changes.push(p);
+
+    fetchAllData(code)
+      .then(function(data) {
+        console.log('[DOQUERY] Success:', data.name, data.source);
+        var prices = data.prices;
+        var klines = data.klines || [];
+        var name = data.name || ('股票' + code);
+        var src = data.source || '未知';
+
+        // Save history
+        saveHistory(code, name);
+        // Cache klines for chart (same length as historyPrices)
+        chartRawKlines = klines.slice(-historyPrices.length);
+
+        // Detect status
+        marketStatus = detectMarketStatus();
+        closePrice = prices[prices.length - 1];
+        // Use ALL available klines (up to 35 days from API)
+        historyPrices = prices.slice(-35);
+        sourceName = src;
+
+        // Current MAs
+        var baseMAs = {
+          ma5: calcMA(historyPrices, 5),
+          ma10: calcMA(historyPrices, 10),
+          ma20: calcMA(historyPrices, 20)
+        };
+
+        // MA arrays for chart (full history + projected)
+        var ma5Arr = [], ma10Arr = [], ma20Arr = [];
+        for (var i = 0; i < historyPrices.length; i++) {
+          ma5Arr.push(calcMA(historyPrices.slice(0, i + 1), 5));
+          ma10Arr.push(calcMA(historyPrices.slice(0, i + 1), 10));
+          ma20Arr.push(calcMA(historyPrices.slice(0, i + 1), 20));
+        }
+
+        // Status bar with inline MA values
+        var tagCls = marketStatus === 'intraday' ? 'tag-intraday' : 'tag-closed';
+        var tagTxt = marketStatus === 'intraday' ? '盘中' : '已收盘';
+        var maHtml = '<span class="ma-inline">';
+        if (baseMAs.ma5 != null) {
+          var ma5cls = closePrice > baseMAs.ma5 ? 'ma-above' : 'ma-below';
+          maHtml += '<span>MA5: <span class="ma-val ' + ma5cls + '">' + baseMAs.ma5.toFixed(2) + '</span></span>';
+        }
+        if (baseMAs.ma10 != null) {
+          var ma10cls = closePrice > baseMAs.ma10 ? 'ma-above' : 'ma-below';
+          maHtml += '<span>MA10: <span class="ma-val ' + ma10cls + '">' + baseMAs.ma10.toFixed(2) + '</span></span>';
+        }
+        if (baseMAs.ma20 != null) {
+          var ma20cls = closePrice > baseMAs.ma20 ? 'ma-above' : 'ma-below';
+          maHtml += '<span>MA20: <span class="ma-val ' + ma20cls + '">' + baseMAs.ma20.toFixed(2) + '</span></span>';
+        }
+        maHtml += '</span>';
+
+        statusBar.innerHTML = '<span class="stock-name-display">' + name + ' (' + code + ')</span>'
+          + '<span class="price-display">最新价: <strong style="color:var(--win)">' + closePrice.toFixed(2) + '</strong></span>'
+          + maHtml
+          + '<span class="status-tag ' + tagCls + '">' + tagTxt + '</span>'
+          + '<span class="price-display" style="font-size:11px;color:var(--text-secondary)">数据源: ' + src + '</span>';
+        statusBar.style.display = 'flex';
+
+        // Build tables
+        var html = '';
+
+        if (marketStatus === 'intraday') {
+          // 盘中: 用昨收价作为基准推演
+          var yesterdayClose = prices.length >= 2 ? prices[prices.length - 2] : closePrice;
+          html += buildChangeTable(name + '(' + code + ') - 盘中推演（以昨日收盘' + yesterdayClose.toFixed(2) + '为基准）',
+            historyPrices, yesterdayClose, changes);
+        } else {
+          // 已收盘: 用今日真实收盘价推演明日
+          html += buildChangeTable(name + '(' + code + ') - 明日推演（以今日收盘' + closePrice.toFixed(2) + '为基准）',
+            historyPrices, closePrice, changes);
+        }
+
+        tablesWrapper.innerHTML = html;
+        resultTitle.textContent = name + '(' + code + ') 均线测算';
+        resultSection.classList.add('show');
+
+        // Bind click events on change rows
+        var rows = tablesWrapper.querySelectorAll('.change-row');
+        for (var r = 0; r < rows.length; r++) {
+          (function(row) {
+            row.addEventListener('click', function() {
+              var pct = parseInt(this.dataset.pct, 10);
+              selectAndRedraw(pct, name, code);
+            });
+          })(rows[r]);
+        }
+
+        // Draw K-line chart
+        drawKLineChart(chartArea, klines, ma5Arr, ma10Arr, ma20Arr, name, code);
+
+        lastResultText = generateCopyText(name, code, closePrice, marketStatus, changes, historyPrices, baseMAs);
+      })
+      .catch(function(err) {
+        showError(err.message || '查询失败，请检查股票代码后重试');
+        emptyState.style.display = 'block';
+      })
+      .finally(function() {
+        loadingOverlay.classList.remove('show');
+      });
+  }
+
+  /* ===== Select change % and redraw chart ===== */
+  function selectAndRedraw(pct, name, code) {
+    selectedPct = pct;
+
+    // Re-render tables with new selection highlight
+    var basePrice = historyPrices[historyPrices.length - 1];
+    var projectedPrice = basePrice * (1 + pct / 100);
+    var ma5 = calcProjectedMA(historyPrices, projectedPrice, 5);
+    var ma10 = calcProjectedMA(historyPrices, projectedPrice, 10);
+    var ma20 = calcProjectedMA(historyPrices, projectedPrice, 20);
+
+    // Update table row highlights
+    var rows = tablesWrapper.querySelectorAll('.change-row');
+    for (var i = 0; i < rows.length; i++) {
+      if (parseInt(rows[i].dataset.pct, 10) === pct) {
+        rows[i].classList.add('selected-row');
+      } else {
+        rows[i].classList.remove('selected-row');
+      }
+    }
+
+    // Redraw chart with projected price
+    var ma5Arr = [], ma10Arr = [], ma20Arr = [];
+    for (var i = 0; i < historyPrices.length; i++) {
+      ma5Arr.push(calcMA(historyPrices.slice(0, i + 1), 5));
+      ma10Arr.push(calcMA(historyPrices.slice(0, i + 1), 10));
+      ma20Arr.push(calcMA(historyPrices.slice(0, i + 1), 20));
+    }
+    drawKLineChart(chartArea, chartRawKlines, ma5Arr, ma10Arr, ma20Arr, name, code, projectedPrice, pct);
+  }
+
+  /* ===== Buttons ===== */
+  // Expose for browser automation testing
+  window._doQueryInline = doQuery;
+  queryBtn.addEventListener('click', doQuery);
+  clearBtn.addEventListener('click', function() {
+    stockInput.value = '';
+    resultSection.classList.remove('show');
+    statusBar.style.display = 'none';
+    emptyState.style.display = 'block';
+    hideError();
+    stockInput.focus();
+  });
+
+  /* ===== Copy ===== */
+  copyBtn.addEventListener('click', function() {
+    if (!lastResultText) return;
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(lastResultText).then(function() {
+        copyBtn.textContent = '已复制!';
+        copyBtn.style.background = 'var(--green)';
+        setTimeout(function() { copyBtn.textContent = '复制表格数据'; copyBtn.style.background = ''; }, 1500);
+      }).catch(fallbackCopy);
+    } else {
+      fallbackCopy();
+    }
+  });
+
+  function fallbackCopy() {
+    var ta = document.createElement('textarea');
+    ta.value = lastResultText;
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    try { document.execCommand('copy'); } catch(e) {}
+    document.body.removeChild(ta);
+    copyBtn.textContent = '已复制!';
+    setTimeout(function() { copyBtn.textContent = '复制表格数据'; }, 1500);
+  }
+
+  /* ===== Error ===== */
+  function showError(msg) {
+    errorToast.textContent = msg;
+    errorToast.classList.add('show');
+    setTimeout(hideError, 5000);
+  }
+  function hideError() {
+    errorToast.classList.remove('show');
+  }
+
+})();
+</script>
+</body>
+</html>
