@@ -353,10 +353,6 @@ body {
         <label for="toggleSupRes"><span class="sr-dot" style="background:#ef4444;"></span>支撑/压力</label>
       </div>
       <div class="sr-toggle-item">
-        <input type="checkbox" id="toggleMA" checked>
-        <label for="toggleMA"><span class="sr-dot" style="background:#3b82f6;"></span>均线支撑/压力</label>
-      </div>
-      <div class="sr-toggle-item">
         <input type="checkbox" id="toggleFib" checked>
         <label for="toggleFib"><span class="sr-dot" style="background:#f97316;"></span>斐波那契回撤</label>
       </div>
@@ -398,7 +394,6 @@ body {
   var supportLevels = [];    // computed support/resistance levels
   var toggleSupport = true;  // toggle visibility of support/resistance lines
   var toggleFibonacci = true; // toggle fibonacci levels
-  var toggleMA = true;       // toggle MA support/resistance lines
 
   /* ===== DOM ===== */
   var stockInput = document.getElementById('stockInput');
@@ -418,7 +413,6 @@ body {
   var autocompleteList = document.getElementById('autocompleteList');
   var srToggleBar = document.getElementById('srToggleBar');
   var toggleSupResEl = document.getElementById('toggleSupRes');
-  var toggleMAEl = document.getElementById('toggleMA');
   var toggleFibEl = document.getElementById('toggleFib');
 
   /* ===== Theme ===== */
@@ -527,7 +521,7 @@ body {
     var market = getMarket(code);
     if (!market) return Promise.reject(new Error('不支持的股票代码前缀'));
     var ticker = market === 'sh' ? 'sh' + code : 'sz' + code;
-    var url = 'https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param=' + ticker + ',day,,,35,qfq';
+    var url = 'https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param=' + ticker + ',day,,,60,qfq';
     return fetch(url)
       .then(function(r) { if (!r.ok) throw new Error('腾讯接口 '+r.status); return r.json(); })
       .then(function(data) {
@@ -747,8 +741,6 @@ body {
 
           if (level.type === 'resistance' && toggleSupport) { show = true; lineColor = '#ef4444'; }
           else if (level.type === 'support' && toggleSupport) { show = true; lineColor = '#22c55e'; }
-          else if (level.type === 'ma-resistance' && toggleMA) { show = true; lineColor = '#3b82f6'; }
-          else if (level.type === 'ma-support' && toggleMA) { show = true; lineColor = '#3b82f6'; }
           else if (level.type === 'fibonacci' && toggleFibonacci) { show = true; lineColor = '#f97316'; }
 
           if (!show) continue;
@@ -956,11 +948,10 @@ body {
 
   /* ===== Support/Resistance Toggles ===== */
   toggleSupResEl.addEventListener('change', function() { toggleSupport = this.checked; redrawChartWithLevel(); });
-  toggleMAEl.addEventListener('change', function() { toggleMA = this.checked; redrawChartWithLevel(); });
   toggleFibEl.addEventListener('change', function() { toggleFibonacci = this.checked; redrawChartWithLevel(); });
 
   /* ===== Support/Resistance Level Calculation ===== */
-  function computeSupportResistance(klines, prices, baseMAs) {
+  function computeSupportResistance(klines, prices) {
     var levels = [];
     var n = prices.length;
     var lookbackShort = Math.min(20, n);
@@ -1001,20 +992,6 @@ body {
         if (fb > fibLow && fb < fibHigh) {
           levels.push({ price: fb, type: 'fibonacci', label: '斐波那契' });
         }
-      }
-    }
-
-    // MA support/resistance
-    var cp = prices[n - 1];
-    if (baseMAs) {
-      if (baseMAs.ma5 != null && baseMAs.ma5 !== cp) {
-        levels.push({ price: baseMAs.ma5, type: baseMAs.ma5 < cp ? 'ma-support' : 'ma-resistance', label: 'MA5' });
-      }
-      if (baseMAs.ma10 != null && baseMAs.ma10 !== cp) {
-        levels.push({ price: baseMAs.ma10, type: baseMAs.ma10 < cp ? 'ma-support' : 'ma-resistance', label: 'MA10' });
-      }
-      if (baseMAs.ma20 != null && baseMAs.ma20 !== cp) {
-        levels.push({ price: baseMAs.ma20, type: baseMAs.ma20 < cp ? 'ma-support' : 'ma-resistance', label: 'MA20' });
       }
     }
 
@@ -1183,8 +1160,8 @@ body {
         // Detect status
         marketStatus = detectMarketStatus();
         closePrice = prices[prices.length - 1];
-        // Use ALL available klines (up to 35 days from API)
-        historyPrices = prices.slice(-35);
+        // Use up to 60 trading days of data
+        historyPrices = prices.slice(-60);
         sourceName = src;
 
         // ETF (51xx / 15xx) prices are 3 decimal places
@@ -1198,7 +1175,7 @@ body {
         };
 
         // Compute support/resistance levels
-        computeSupportResistance(klines, historyPrices, baseMAs);
+        computeSupportResistance(klines, historyPrices);
 
         // MA arrays for chart (full history + projected)
         var ma5Arr = [], ma10Arr = [], ma20Arr = [];
