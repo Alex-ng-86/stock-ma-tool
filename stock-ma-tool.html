@@ -285,6 +285,33 @@ body {
 .data-table::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
 .autocomplete-list::-webkit-scrollbar { width: 4px; }
 .autocomplete-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+/* ===== Support/Resistance Inline Toggle Bar ===== */
+.sr-toggle-bar-inline {
+  display: flex; gap: 12px; flex-wrap: wrap; align-items: center;
+  padding: 8px 16px; background: var(--card-bg);
+  border: 1px solid var(--border); border-radius: var(--radius);
+  margin: 12px 0; font-size: 12px; box-shadow: var(--shadow);
+}
+.sr-toggle-item {
+  display: flex; align-items: center; gap: 4px; cursor: pointer;
+  user-select: none;
+}
+.sr-toggle-item input[type="checkbox"] {
+  accent-color: var(--primary); width: 14px; height: 14px; cursor: pointer;
+}
+.sr-toggle-item label { cursor: pointer; font-size: 12px; color: var(--text); }
+.sr-dot {
+  display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+  margin-right: 2px; flex-shrink: 0;
+}
+.key-highlight {
+  background: rgba(255, 193, 7, 0.25) !important;
+  font-weight: 600;
+}
+[data-theme="dark"] .key-highlight {
+  background: rgba(255, 193, 7, 0.15) !important;
+}
 </style>
 </head>
 <body>
@@ -319,6 +346,21 @@ body {
       <button class="copy-btn" id="copyBtn">复制表格数据</button>
     </div>
     <div class="tables-wrapper" id="tablesWrapper"></div>
+    <div class="sr-toggle-bar-inline" id="srToggleBar" style="display:none;">
+      <span style="font-weight:600;color:var(--text-secondary);">标注层:</span>
+      <div class="sr-toggle-item">
+        <input type="checkbox" id="toggleSupRes" checked>
+        <label for="toggleSupRes"><span class="sr-dot" style="background:#ef4444;"></span>支撑/压力</label>
+      </div>
+      <div class="sr-toggle-item">
+        <input type="checkbox" id="toggleMA" checked>
+        <label for="toggleMA"><span class="sr-dot" style="background:#3b82f6;"></span>均线支撑/压力</label>
+      </div>
+      <div class="sr-toggle-item">
+        <input type="checkbox" id="toggleFib" checked>
+        <label for="toggleFib"><span class="sr-dot" style="background:#f97316;"></span>斐波那契回撤</label>
+      </div>
+    </div>
     <div id="chartArea"></div>
   </div>
 
@@ -353,6 +395,10 @@ body {
   var chartBasePrices = [];  // cached historical prices for MA calc
   var selectedPct = 0;       // currently selected % change
   var priceDigits = 2;       // 价格小数位数，ETF为3，普通股票为2
+  var supportLevels = [];    // computed support/resistance levels
+  var toggleSupport = true;  // toggle visibility of support/resistance lines
+  var toggleFibonacci = true; // toggle fibonacci levels
+  var toggleMA = true;       // toggle MA support/resistance lines
 
   /* ===== DOM ===== */
   var stockInput = document.getElementById('stockInput');
@@ -370,6 +416,10 @@ body {
   var loadingText = document.getElementById('loadingText');
   var errorToast = document.getElementById('errorToast');
   var autocompleteList = document.getElementById('autocompleteList');
+  var srToggleBar = document.getElementById('srToggleBar');
+  var toggleSupResEl = document.getElementById('toggleSupRes');
+  var toggleMAEl = document.getElementById('toggleMA');
+  var toggleFibEl = document.getElementById('toggleFib');
 
   /* ===== Theme ===== */
   function initTheme() {
@@ -685,6 +735,51 @@ body {
       if (ma20Arr) { ctx.fillStyle = ma20Color; ctx.fillText('MA20', lx, ly); }
       if (projectedPrice != null) { ctx.fillStyle = futureColor; ctx.fillText('预测', lx, ly); }
 
+      // ===== Draw Support/Resistance Levels =====
+      if (supportLevels && supportLevels.length > 0) {
+        var rightLabelX = W - padR + 2; // slightly past chart area on the right
+        var labelOffsetY = 0;
+        for (var sl = 0; sl < supportLevels.length; sl++) {
+          var level = supportLevels[sl];
+          var show = false;
+          var lineColor = '';
+          var dashPattern = [6, 4];
+
+          if (level.type === 'resistance' && toggleSupport) { show = true; lineColor = '#ef4444'; }
+          else if (level.type === 'support' && toggleSupport) { show = true; lineColor = '#22c55e'; }
+          else if (level.type === 'ma-resistance' && toggleMA) { show = true; lineColor = '#3b82f6'; }
+          else if (level.type === 'ma-support' && toggleMA) { show = true; lineColor = '#3b82f6'; }
+          else if (level.type === 'fibonacci' && toggleFibonacci) { show = true; lineColor = '#f97316'; }
+
+          if (!show) continue;
+
+          if (level.price < minV || level.price > maxV) continue;
+
+          var yLevel = yPos(level.price);
+          if (yLevel < padT - 5 || yLevel > padT + chartH + 5) continue;
+
+          ctx.save();
+          ctx.setLineDash(dashPattern);
+          ctx.strokeStyle = lineColor;
+          ctx.lineWidth = 1.2;
+          ctx.beginPath();
+          ctx.moveTo(padL, yLevel);
+          ctx.lineTo(W - padR, yLevel);
+          ctx.stroke();
+          ctx.restore();
+
+          // Label on the right
+          ctx.save();
+          ctx.setLineDash([]);
+          ctx.fillStyle = lineColor;
+          ctx.font = 'bold 10px sans-serif';
+          ctx.textAlign = 'right';
+          var labelText = level.label + ' ' + level.price.toFixed(priceDigits);
+          ctx.fillText(labelText, W - padR - 2, yLevel - 4);
+          ctx.restore();
+        }
+      }
+
       // Draw MA lines (extend to future day)
       function drawLine(arr, color, extendToFuture, futureVal) {
         if (!arr) return;
@@ -859,14 +954,101 @@ body {
     return 'closed';
   }
 
-  /* ===== Build Change Table ===== */
+  /* ===== Support/Resistance Toggles ===== */
+  toggleSupResEl.addEventListener('change', function() { toggleSupport = this.checked; redrawChartWithLevel(); });
+  toggleMAEl.addEventListener('change', function() { toggleMA = this.checked; redrawChartWithLevel(); });
+  toggleFibEl.addEventListener('change', function() { toggleFibonacci = this.checked; redrawChartWithLevel(); });
+
+  /* ===== Support/Resistance Level Calculation ===== */
+  function computeSupportResistance(klines, prices, baseMAs) {
+    var levels = [];
+    var n = prices.length;
+    var lookbackShort = Math.min(20, n);
+    var lookbackMid = Math.min(60, n);
+
+    // Short-term resistance/support (recent N highs/lows)
+    var shortHigh = -Infinity, shortLow = Infinity;
+    for (var i = n - lookbackShort; i < n; i++) {
+      if (klines[i] && klines[i].high) shortHigh = Math.max(shortHigh, klines[i].high);
+      if (klines[i] && klines[i].low) shortLow = Math.min(shortLow, klines[i].low);
+    }
+    if (shortHigh !== -Infinity) levels.push({ price: shortHigh, type: 'resistance', label: '短期压力' });
+    if (shortLow !== Infinity) levels.push({ price: shortLow, type: 'support', label: '短期支撑' });
+
+    // Mid-term resistance/support
+    var midHigh = -Infinity, midLow = Infinity;
+    for (var i = n - lookbackMid; i < n; i++) {
+      if (klines[i] && klines[i].high) midHigh = Math.max(midHigh, klines[i].high);
+      if (klines[i] && klines[i].low) midLow = Math.min(midLow, klines[i].low);
+    }
+    if (midHigh !== -Infinity) levels.push({ price: midHigh, type: 'resistance', label: '中期压力' });
+    if (midLow !== Infinity) levels.push({ price: midLow, type: 'support', label: '中期支撑' });
+
+    // Fibonacci retracement levels (based on recent 60 or all)
+    var fibRange = Math.min(60, n);
+    var fibHigh = -Infinity, fibLow = Infinity;
+    for (var i = n - fibRange; i < n; i++) {
+      if (klines[i]) {
+        fibHigh = Math.max(fibHigh, klines[i].high);
+        fibLow = Math.min(fibLow, klines[i].low);
+      }
+    }
+    if (fibHigh !== -Infinity && fibLow !== Infinity && fibHigh > fibLow) {
+      var diff = fibHigh - fibLow;
+      var fibRatios = [0.382, 0.5, 0.618];
+      for (var f = 0; f < fibRatios.length; f++) {
+        var fb = fibHigh - diff * fibRatios[f];
+        if (fb > fibLow && fb < fibHigh) {
+          levels.push({ price: fb, type: 'fibonacci', label: '斐波那契' });
+        }
+      }
+    }
+
+    // MA support/resistance
+    var cp = prices[n - 1];
+    if (baseMAs) {
+      if (baseMAs.ma5 != null && baseMAs.ma5 !== cp) {
+        levels.push({ price: baseMAs.ma5, type: baseMAs.ma5 < cp ? 'ma-support' : 'ma-resistance', label: 'MA5' });
+      }
+      if (baseMAs.ma10 != null && baseMAs.ma10 !== cp) {
+        levels.push({ price: baseMAs.ma10, type: baseMAs.ma10 < cp ? 'ma-support' : 'ma-resistance', label: 'MA10' });
+      }
+      if (baseMAs.ma20 != null && baseMAs.ma20 !== cp) {
+        levels.push({ price: baseMAs.ma20, type: baseMAs.ma20 < cp ? 'ma-support' : 'ma-resistance', label: 'MA20' });
+      }
+    }
+
+    // Deduplicate: merge levels very close together (within 0.3%)
+    var unique = [];
+    for (var j = 0; j < levels.length; j++) {
+      var found = false;
+      for (var k = 0; k < unique.length; k++) {
+        if (Math.abs(levels[j].price - unique[k].price) / levels[j].price < 0.003) {
+          found = true; break;
+        }
+      }
+      if (!found) unique.push(levels[j]);
+    }
+
+    supportLevels = unique.sort(function(a, b) { return b.price - a.price; });
+    return supportLevels;
+  }
+
+  /* ===== Redraw chart with current level visibility ===== */
+  function redrawChartWithLevel() {
+    if (!_chartData) return;
+    var projectedPrice = selectedPct !== null ? chartBasePrices[chartBasePrices.length - 1] * (1 + selectedPct / 100) : null;
+    drawKLineChart(chartArea, chartRawKlines, _chartData.ma5Arr, _chartData.ma10Arr, _chartData.ma20Arr,
+      _chartData.name, _chartData.code, projectedPrice, selectedPct);
+  }
+
+  /* ===== Build Change Table (with key-level column) ===== */
   function buildChangeTable(title, prices, basePrice, changes) {
     chartBasePrices = prices; // cache for chart redraw
     var html = '<div class="table-card">';
     html += '<div class="table-card-title">' + title + '</div>';
     html += '<div class="dual-tables">';
 
-    // Split changes: positive (10..0) and negative (0..-10)
     var posChanges = changes.filter(function(c) { return c >= 0; });
     var negChanges = changes.filter(function(c) { return c < 0; });
 
@@ -882,7 +1064,7 @@ body {
 
   function buildChangeTableColumn(changes, prices, basePrice, isPositive) {
     var html = '<table class="data-table data-table-half"><thead><tr>';
-    html += '<th>涨跌幅</th><th>预测收盘价</th><th>MA5</th><th>MA10</th><th>MA20</th>';
+    html += '<th>涨跌幅</th><th>预测收盘价</th><th>关键位</th><th>MA5</th><th>MA10</th><th>MA20</th>';
     html += '</tr></thead><tbody>';
 
     for (var i = 0; i < changes.length; i++) {
@@ -892,6 +1074,9 @@ body {
       var ma10 = calcProjectedMA(prices, projectedPrice, 10);
       var ma20 = calcProjectedMA(prices, projectedPrice, 20);
 
+      // Find nearest key level
+      var keyLevelInfo = findNearestKeyLevel(projectedPrice);
+
       var sign = pct >= 0 ? '+' : '';
       var cls = pct === 0 ? 'price-base' : (pct > 0 ? 'price-win' : 'price-loss');
       var rowCls = pct === selectedPct ? ' selected-row' : '';
@@ -899,6 +1084,7 @@ body {
       html += '<tr class="change-row' + rowCls + '" data-pct="' + pct + '">';
       html += '<td class="' + cls + '"><strong>' + sign + pct + '%</strong></td>';
       html += '<td class="' + cls + '">' + projectedPrice.toFixed(priceDigits) + '</td>';
+      html += '<td class="' + (keyLevelInfo.highlight ? 'key-highlight' : '') + '">' + keyLevelInfo.text + '</td>';
       html += '<td>' + (ma5 !== null ? ma5.toFixed(priceDigits) : '-') + '</td>';
       html += '<td>' + (ma10 !== null ? ma10.toFixed(priceDigits) : '-') + '</td>';
       html += '<td>' + (ma20 !== null ? ma20.toFixed(priceDigits) : '-') + '</td>';
@@ -907,6 +1093,28 @@ body {
 
     html += '</tbody></table>';
     return html;
+  }
+
+  function findNearestKeyLevel(projectedPrice) {
+    if (!supportLevels || supportLevels.length === 0) {
+      return { text: '-', highlight: false };
+    }
+    var nearest = null;
+    var nearestDist = Infinity;
+    for (var i = 0; i < supportLevels.length; i++) {
+      var dist = Math.abs(supportLevels[i].price - projectedPrice);
+      if (dist < nearestDist) {
+        nearestDist = dist;
+        nearest = supportLevels[i];
+      }
+    }
+    if (!nearest) return { text: '-', highlight: false };
+    var pctDiff = nearestDist / nearest.price;
+    var isHighlight = pctDiff < 0.005; // within 0.5%
+    return {
+      text: nearest.label + ' ' + nearest.price.toFixed(priceDigits),
+      highlight: isHighlight
+    };
   }
 
   /* ===== Generate Copy Text ===== */
@@ -989,6 +1197,9 @@ body {
           ma20: calcMA(historyPrices, 20)
         };
 
+        // Compute support/resistance levels
+        computeSupportResistance(klines, historyPrices, baseMAs);
+
         // MA arrays for chart (full history + projected)
         var ma5Arr = [], ma10Arr = [], ma20Arr = [];
         for (var i = 0; i < historyPrices.length; i++) {
@@ -1021,6 +1232,9 @@ body {
           + '<span class="status-tag ' + tagCls + '">' + tagTxt + '</span>'
           + '<span class="price-display" style="font-size:11px;color:var(--text-secondary)">数据源: ' + src + '</span>';
         statusBar.style.display = 'flex';
+
+        // Show SR toggle bar
+        srToggleBar.style.display = 'flex';
 
         // Build tables
         var html = '';
