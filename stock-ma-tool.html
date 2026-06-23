@@ -298,9 +298,9 @@ body {
   <div class="input-section">
     <div class="input-row">
       <div class="input-group" style="flex:2;">
-        <label for="stockInput">股票代码（6位数字）</label>
+        <label for="stockInput">股票代码/ETF代码（6位数字）</label>
         <div class="input-wrapper">
-          <input type="text" id="stockInput" placeholder="例：600519" maxlength="6" inputmode="numeric" autocomplete="off">
+          <input type="text" id="stockInput" placeholder="例：600519 / 510300 / 159915" maxlength="6" inputmode="numeric" autocomplete="off">
           <div class="autocomplete-list" id="autocompleteList"></div>
         </div>
       </div>
@@ -324,7 +324,7 @@ body {
 
   <div class="empty-state" id="emptyState">
     <div class="icon">&#128202;</div>
-    <p>请输入6位股票代码，点击查询获取均线测算结果</p>
+    <p>请输入6位股票代码或ETF代码，点击查询获取均线测算结果</p>
   </div>
 </div>
 
@@ -463,8 +463,9 @@ body {
   /* ===== Market detection ===== */
   function getMarket(code) {
     var prefix = code.charAt(0);
-    if (['6','9'].indexOf(prefix) !== -1) return 'sh';
-    if (['0','3','4','8'].indexOf(prefix) !== -1) return 'sz';
+    if (['6','9','5'].indexOf(prefix) !== -1) return 'sh';  // 沪市: 6xxxxx 9xxxxx 51xxxx(ETF)
+    if (['0','3','4','8'].indexOf(prefix) !== -1) return 'sz';  // 深市: 0xxxxx 3xxxxx 4xxxxx 8xxxxx
+    if (['1'].indexOf(prefix) !== -1) return 'sz';  // 深市ETF: 15xxxx
     return null;
   }
 
