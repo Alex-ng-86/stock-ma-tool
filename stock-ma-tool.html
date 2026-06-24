@@ -1154,8 +1154,6 @@ body {
 
         // Save history
         saveHistory(code, name);
-        // Cache klines for chart (same length as historyPrices)
-        chartRawKlines = klines.slice(-historyPrices.length);
 
         // Detect status
         marketStatus = detectMarketStatus();
@@ -1163,6 +1161,10 @@ body {
         // Use up to 60 trading days of data
         historyPrices = prices.slice(-60);
         sourceName = src;
+
+        // Slice klines to match historyPrices length
+        var alignedKlines = klines.slice(-historyPrices.length);
+        chartRawKlines = alignedKlines;  // cache for chart redraw on toggle
 
         // ETF (51xx / 15xx) prices are 3 decimal places
         priceDigits = (code.charAt(0) === '5' || code.charAt(0) === '1') ? 3 : 2;
@@ -1175,7 +1177,7 @@ body {
         };
 
         // Compute support/resistance levels
-        computeSupportResistance(klines, historyPrices);
+        computeSupportResistance(alignedKlines, historyPrices);
 
         // MA arrays for chart (full history + projected)
         var ma5Arr = [], ma10Arr = [], ma20Arr = [];
@@ -1243,7 +1245,7 @@ body {
         }
 
         // Draw K-line chart
-        drawKLineChart(chartArea, klines, ma5Arr, ma10Arr, ma20Arr, name, code);
+        drawKLineChart(chartArea, alignedKlines, ma5Arr, ma10Arr, ma20Arr, name, code);
 
         lastResultText = generateCopyText(name, code, closePrice, marketStatus, changes, historyPrices, baseMAs);
       })
