@@ -3,7 +3,14 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="description" content="纯前端 A股/港股均线测算工具：基于最近 60 个交易日收盘价计算 MA5/MA10/MA20，并推演 ±10% 涨跌幅下的预测收盘价与均线值。">
+<meta name="theme-color" content="#2563eb">
 <title>A股均线测算工具</title>
+<!-- 内联空图标，避免浏览器请求默认 favicon 产生 404 -->
+<link rel="icon" href="data:,">
+<!-- 提前建立到行情接口的 DNS/TLS 连接，降低首次查询延迟 -->
+<link rel="preconnect" href="https://web.ifzq.gtimg.cn" crossorigin>
+<link rel="dns-prefetch" href="https://web.ifzq.gtimg.cn">
 <!-- 样式表引入 -->
 <link rel="stylesheet" href="css/main.css">
 <link rel="stylesheet" href="css/components.css">
@@ -13,100 +20,131 @@
 <!-- ===== 顶部导航栏 ===== -->
 <header class="header">
   <h1>A股均线测算工具</h1>
-  <button class="theme-toggle" id="themeToggle" title="切换主题">&#9790;</button>
+  <button class="theme-toggle" id="themeToggle" type="button" aria-label="切换到深色主题" title="切换到深色主题">
+    <span id="themeIcon" aria-hidden="true">&#9790;</span>
+  </button>
 </header>
 
 <!-- ===== 主容器 ===== -->
-<div class="container">
+<main class="container">
   <!-- 输入区域 -->
-  <div class="input-section">
+  <section class="input-section" aria-label="股票查询">
     <div class="input-row">
-      <div class="input-group" style="flex:2;">
+      <div class="input-group input-group-grow">
         <label for="stockInput">股票代码/ETF代码（A股6位，港股5位）</label>
         <div class="input-wrapper">
-          <input type="text" id="stockInput" placeholder="例：600519 / 510300 / 00700" maxlength="6" inputmode="numeric" autocomplete="off">
-          <div class="autocomplete-list" id="autocompleteList"></div>
+          <input type="text" id="stockInput" placeholder="例：600519 / 510300 / 00700" maxlength="6" inputmode="numeric"
+                 autocomplete="off" spellcheck="false" role="combobox" aria-expanded="false"
+                 aria-controls="autocompleteList" aria-autocomplete="list" aria-describedby="inputHint">
+          <div class="autocomplete-list" id="autocompleteList" role="listbox" aria-label="历史查询记录"></div>
         </div>
+        <p class="input-hint" id="inputHint">A股：6 位数字（沪市 6/9/5 开头，深市 0/1/3/4/8 开头）｜港股：5 位数字（如 00700）</p>
       </div>
-      <div style="display:flex;gap:8px;">
-        <button class="btn btn-primary" id="queryBtn">查询</button>
-        <button class="btn btn-secondary" id="clearBtn">清空</button>
+      <div class="input-actions">
+        <button class="btn btn-primary" id="queryBtn" type="button">查询</button>
+        <button class="btn btn-secondary" id="clearBtn" type="button">清空</button>
       </div>
     </div>
-  </div>
+  </section>
 
   <!-- 状态栏（查询后显示） -->
-  <div class="status-bar" id="statusBar" style="display:none;"></div>
+  <div class="status-bar hidden" id="statusBar" role="status" aria-live="polite"></div>
 
   <!-- 结果区域 -->
-  <div class="result-section" id="resultSection">
+  <section class="result-section" id="resultSection" aria-label="测算结果">
     <div class="result-header">
       <h2 id="resultTitle">均线测算结果</h2>
-      <button class="copy-btn" id="copyBtn">复制表格数据</button>
+      <button class="copy-btn" id="copyBtn" type="button" aria-live="polite">复制表格数据</button>
     </div>
     <!-- 涨跌推演表容器 -->
     <div class="tables-wrapper" id="tablesWrapper"></div>
     <!-- 标注层切换条 -->
-    <div class="sr-toggle-bar-inline" id="srToggleBar" style="display:none;">
-      <span style="font-weight:600;color:var(--text-secondary);">标注层:</span>
+    <div class="sr-toggle-bar-inline hidden" id="srToggleBar" role="group" aria-label="图表标注层开关">
+      <span class="sr-toggle-title">标注层:</span>
       <div class="sr-toggle-item">
         <input type="checkbox" id="toggleSupRes" checked>
-        <label for="toggleSupRes"><span class="sr-dot" style="background:#ef4444;"></span>支撑/压力</label>
+        <label for="toggleSupRes"><span class="sr-dot sr-dot-resistance" aria-hidden="true"></span>支撑/压力</label>
       </div>
       <div class="sr-toggle-item">
         <input type="checkbox" id="toggleFib" checked>
-        <label for="toggleFib"><span class="sr-dot" style="background:#f97316;"></span>斐波那契回撤</label>
+        <label for="toggleFib"><span class="sr-dot sr-dot-fib" aria-hidden="true"></span>斐波那契回撤</label>
       </div>
     </div>
     <!-- K线图容器 -->
     <div id="chartArea"></div>
-  </div>
+  </section>
 
   <!-- 空状态提示 -->
   <div class="empty-state" id="emptyState">
-    <div class="icon">&#128202;</div>
-    <p>请输入股票代码，点击查询获取均线测算结果<br><span style="font-size:12px;color:var(--text-secondary)">A股：6位数字 | 港股：5位数字</span></p>
+    <div class="icon" aria-hidden="true">&#128202;</div>
+    <p>请输入股票代码，点击查询获取均线测算结果<br><span class="empty-sub">A股：6位数字 | 港股：5位数字</span></p>
   </div>
-</div>
+
+  <noscript><p class="noscript-tip">本工具依赖 JavaScript 运行，请在浏览器中启用 JavaScript 后重试。</p></noscript>
+</main>
 
 <!-- ===== 加载遮罩 ===== -->
-<div class="loading-overlay" id="loadingOverlay">
+<div class="loading-overlay" id="loadingOverlay" role="status" aria-live="polite">
   <div class="loading-box">
-    <div class="spinner"></div>
+    <div class="spinner" aria-hidden="true"></div>
     <p id="loadingText">正在获取数据...</p>
   </div>
 </div>
 
 <!-- ===== 错误提示Toast ===== -->
-<div class="error-toast" id="errorToast"></div>
+<div class="error-toast" id="errorToast" role="alert" aria-atomic="true"></div>
 
-<!-- ===== 主脚本（保持完整单文件，确保功能100%一致） ===== -->
+<!-- ===== 纯逻辑层（与 UI 解耦，可独立单测） ===== -->
+<script src="js/core.js"></script>
+<!-- ===== UI 层：模块分区（状态 / 数据访问 / 图表 / 表格 / 流程 / 事件） ===== -->
 <script>
 
 (function() {
   'use strict';
 
-  /* ===== State ===== */
-  var historyCache = [];
-  var lastResultText = '';
-  var stockName = '';
-  var closePrice = 0;
-  var marketStatus = '';
-  var historyPrices = [];
-  var sourceName = '';
-  var chartRawKlines = [];   // cached OHLC klines for chart
-  var chartBasePrices = [];  // cached historical prices for MA calc
-  var selectedPct = 0;       // currently selected % change
-  var priceDigits = 2;       // 价格小数位数，ETF为3，普通股票为2
-  var supportLevels = [];    // computed support/resistance levels
-  var toggleSupport = true;  // toggle visibility of support/resistance lines
-  var toggleFibonacci = true; // toggle fibonacci levels
+  var C = window.MACore;
+  var CONFIG = C.CONFIG;
+  var D = C.formatPrice;           // 价格格式化（统一 '-' 兜底）
 
-  /* ===== DOM ===== */
+  /* =========================================================
+   * 1. 应用状态：唯一数据源，避免散落的隐式全局变量
+   * ========================================================= */
+  var state = {
+    history: [],                    // 本地查询历史
+    code: '', name: '',             // 当前股票
+    market: null,                   // sh / sz / hk
+    marketStatus: 'closed',         // intraday / closed
+    sourceName: '',                 // 数据源名称
+    prices: [],                     // 参与计算的历史收盘价（最近 N 个交易日）
+    klines: [],                     // 与 prices 严格等长的 OHLC 数据
+    lastPrice: 0,                   // 最新价
+    basePrice: 0,                   // 推演基准价（盘中为昨收，收盘为今收）
+    digits: 2,                      // 价格显示精度
+    levels: [],                     // 支撑/压力/斐波那契关键位
+    ma: { ma5: [], ma10: [], ma20: [] },
+    baseMAs: { ma5: null, ma10: null, ma20: null },
+    rows: [],                       // 推演数据（表格与复制文本共用）
+    selectedPct: null,              // 当前选中的涨跌幅
+    showSupport: true,              // 标注层：支撑/压力
+    showFibonacci: true             // 标注层：斐波那契
+  };
+
+  var lastResultText = '';
+  var querySeq = 0;                 // 查询序号：丢弃过期响应
+  var inflight = null;              // 进行中的请求（同代码去重）
+  var resultCache = {};             // 结果缓存（短期复用，减少重复请求）
+  var currentAbort = null;          // 当前请求控制器（新查询会取消旧请求）
+  var errorTimer = null;
+  var copyTimer = null;
+
+  /* =========================================================
+   * 2. DOM 引用与小工具
+   * ========================================================= */
   var stockInput = document.getElementById('stockInput');
   var queryBtn = document.getElementById('queryBtn');
   var clearBtn = document.getElementById('clearBtn');
   var themeToggle = document.getElementById('themeToggle');
+  var themeIcon = document.getElementById('themeIcon');
   var statusBar = document.getElementById('statusBar');
   var resultSection = document.getElementById('resultSection');
   var tablesWrapper = document.getElementById('tablesWrapper');
@@ -115,406 +153,522 @@
   var copyBtn = document.getElementById('copyBtn');
   var emptyState = document.getElementById('emptyState');
   var loadingOverlay = document.getElementById('loadingOverlay');
-  var loadingText = document.getElementById('loadingText');
   var errorToast = document.getElementById('errorToast');
   var autocompleteList = document.getElementById('autocompleteList');
   var srToggleBar = document.getElementById('srToggleBar');
   var toggleSupResEl = document.getElementById('toggleSupRes');
   var toggleFibEl = document.getElementById('toggleFib');
 
-  /* ===== Theme ===== */
-  function initTheme() {
-    var saved = localStorage.getItem('ma-tool-theme');
-    if (saved === 'dark') {
-      document.documentElement.setAttribute('data-theme', 'dark');
-      themeToggle.innerHTML = '&#9788;';
-    } else {
-      document.documentElement.removeAttribute('data-theme');
-      themeToggle.innerHTML = '&#9790;';
-    }
+  function storageGet(key) {
+    try { return localStorage.getItem(key); } catch (e) { return null; }
   }
-  initTheme();
+  function storageSet(key, value) {
+    try { localStorage.setItem(key, value); } catch (e) { /* 隐私模式下忽略 */ }
+  }
+  function showLoading(show) {
+    loadingOverlay.classList.toggle('show', !!show);
+  }
+  function showError(msg) {
+    errorToast.innerHTML = '<span class="toast-msg">' + C.escapeHtml(msg) + '</span>'
+      + '<button type="button" class="toast-retry" id="toastRetry">重试</button>';
+    errorToast.classList.add('show');
+    var retry = errorToast.querySelector('#toastRetry');
+    if (retry) retry.addEventListener('click', function () { hideError(); doQuery(); });
+    if (errorTimer) clearTimeout(errorTimer);          // 避免旧定时器提前关闭新提示
+    errorTimer = setTimeout(hideError, 8000);
+  }
+  function hideError() {
+    errorToast.classList.remove('show');
+    if (errorTimer) { clearTimeout(errorTimer); errorTimer = null; }
+  }
 
-  themeToggle.addEventListener('click', function() {
-    var isDark = document.documentElement.hasAttribute('data-theme');
-    if (isDark) {
-      document.documentElement.removeAttribute('data-theme');
-      themeToggle.innerHTML = '&#9790;';
-      localStorage.setItem('ma-tool-theme', 'light');
-    } else {
-      document.documentElement.setAttribute('data-theme', 'dark');
-      themeToggle.innerHTML = '&#9788;';
-      localStorage.setItem('ma-tool-theme', 'dark');
-    }
+  /* =========================================================
+   * 3. 主题
+   * ========================================================= */
+  function applyTheme(isDark, persist) {
+    if (isDark) document.documentElement.setAttribute('data-theme', 'dark');
+    else document.documentElement.removeAttribute('data-theme');
+    themeIcon.innerHTML = isDark ? '&#9788;' : '&#9790;';
+    var label = isDark ? '切换到浅色主题' : '切换到深色主题';
+    themeToggle.setAttribute('aria-label', label);
+    themeToggle.setAttribute('title', label);
+    if (persist) storageSet(CONFIG.THEME_KEY, isDark ? 'dark' : 'light');
+    scheduleChartPaint();                              // 主题切换后同步图表配色
+  }
+  themeToggle.addEventListener('click', function () {
+    applyTheme(!document.documentElement.hasAttribute('data-theme'), true);
   });
+  applyTheme(storageGet(CONFIG.THEME_KEY) === 'dark', false);
 
-  /* ===== History ===== */
+  /* =========================================================
+   * 4. 查询历史与自动补全
+   * ========================================================= */
+  var acIndex = -1;
+
   function loadHistory() {
-    try {
-      var d = localStorage.getItem('ma-tool-history');
-      historyCache = d ? JSON.parse(d) : [];
-    } catch(e) { historyCache = []; }
+    var parsed;
+    try { parsed = JSON.parse(storageGet(CONFIG.HISTORY_KEY) || '[]'); } catch (e) { parsed = []; }
+    state.history = Array.isArray(parsed) ? parsed : [];
+  }
+  function saveHistory(code, name) {
+    state.history = state.history.filter(function (h) { return h.code !== code; });
+    state.history.unshift({ code: code, name: name, time: Date.now() });
+    if (state.history.length > CONFIG.HISTORY_MAX) state.history = state.history.slice(0, CONFIG.HISTORY_MAX);
+    storageSet(CONFIG.HISTORY_KEY, JSON.stringify(state.history));
   }
   loadHistory();
 
-  function saveHistory(code, name) {
-    historyCache = historyCache.filter(function(h) { return h.code !== code; });
-    historyCache.unshift({ code: code, name: name, time: Date.now() });
-    if (historyCache.length > 20) historyCache = historyCache.slice(0, 20);
-    try { localStorage.setItem('ma-tool-history', JSON.stringify(historyCache)); } catch(e) {}
+  function hideAutocomplete() {
+    autocompleteList.classList.remove('show');
+    stockInput.setAttribute('aria-expanded', 'false');
+    stockInput.removeAttribute('aria-activedescendant');
+    acIndex = -1;
   }
 
-  /* ===== Autocomplete ===== */
   function showAutocomplete(val) {
-    if (!val) { autocompleteList.classList.remove('show'); return; }
-    var matches = historyCache.filter(function(h) {
+    if (!val) { hideAutocomplete(); return; }
+    var matches = state.history.filter(function (h) {
       return h.code.indexOf(val) !== -1 || val.indexOf(h.code) !== -1;
     });
-    if (matches.length === 0) { autocompleteList.classList.remove('show'); return; }
-    autocompleteList.innerHTML = matches.map(function(h, i) {
-      return '<div class="autocomplete-item' + (i===0?' active':'') + '" data-code="' + h.code + '" data-name="' + (h.name||'') + '">'
-        + '<span>' + h.code + '</span><span class="stock-name">' + (h.name||'') + '</span></div>';
+    if (matches.length === 0) { hideAutocomplete(); return; }
+
+    acIndex = -1;
+    // 历史记录中的名称来自外部接口，统一转义后再注入
+    autocompleteList.innerHTML = matches.map(function (h, i) {
+      return '<div class="autocomplete-item" role="option" id="ac-item-' + i + '" aria-selected="false"'
+        + ' data-code="' + C.escapeHtml(h.code) + '">'
+        + '<span>' + C.escapeHtml(h.code) + '</span>'
+        + '<span class="stock-name">' + C.escapeHtml(h.name || '') + '</span></div>';
     }).join('');
     autocompleteList.classList.add('show');
+    stockInput.setAttribute('aria-expanded', 'true');
+
     var items = autocompleteList.querySelectorAll('.autocomplete-item');
     for (var i = 0; i < items.length; i++) {
-      (function(el) {
-        el.addEventListener('click', function() {
-          stockInput.value = el.dataset.code;
-          autocompleteList.classList.remove('show');
-        });
-      })(items[i]);
+      items[i].addEventListener('mousedown', function (e) { e.preventDefault(); });  // 避免输入框失焦
+      items[i].addEventListener('click', function () { pickAutocomplete(this); });
     }
   }
 
-  stockInput.addEventListener('input', function() {
+  function setActiveItem(index) {
+    var items = autocompleteList.querySelectorAll('.autocomplete-item');
+    if (!items.length) return;
+    if (index < 0) index = items.length - 1;
+    if (index >= items.length) index = 0;
+    for (var i = 0; i < items.length; i++) {
+      var active = i === index;
+      items[i].classList.toggle('active', active);
+      items[i].setAttribute('aria-selected', String(active));
+    }
+    acIndex = index;
+    stockInput.setAttribute('aria-activedescendant', items[index].id);
+    items[index].scrollIntoView({ block: 'nearest' });
+  }
+
+  function pickAutocomplete(el) {
+    stockInput.value = el.dataset.code;
+    hideAutocomplete();
+    stockInput.focus();
+  }
+
+  // 先过滤非数字，再触发补全，避免用含非法字符的脏值匹配历史记录
+  stockInput.addEventListener('input', function () {
+    stockInput.value = stockInput.value.replace(/[^\d]/g, '');
     showAutocomplete(stockInput.value.trim());
   });
-  stockInput.addEventListener('focus', function() {
+  stockInput.addEventListener('focus', function () {
     if (stockInput.value.trim()) showAutocomplete(stockInput.value.trim());
   });
-  document.addEventListener('click', function(e) {
-    if (!e.target.closest('.input-wrapper')) autocompleteList.classList.remove('show');
+  document.addEventListener('click', function (e) {
+    if (!e.target.closest('.input-wrapper')) hideAutocomplete();
   });
 
-  stockInput.addEventListener('keydown', function(e) {
-    if (e.key === 'Enter') { e.preventDefault(); doQuery(); }
-    if (e.key === 'Escape') autocompleteList.classList.remove('show');
+  stockInput.addEventListener('keydown', function (e) {
+    var listOpen = autocompleteList.classList.contains('show');
+    if (e.key === 'ArrowDown' && listOpen) { e.preventDefault(); setActiveItem(acIndex + 1); return; }
+    if (e.key === 'ArrowUp' && listOpen) { e.preventDefault(); setActiveItem(acIndex - 1); return; }
+    if (e.key === 'Escape') { hideAutocomplete(); return; }
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      // 用方向键显式选中候选项时才填入，否则直接查询（保持原有回车即查询的习惯）
+      if (listOpen && acIndex >= 0) {
+        setActiveItem(acIndex);
+        pickAutocomplete(autocompleteList.querySelectorAll('.autocomplete-item')[acIndex]);
+      } else {
+        doQuery();
+      }
+    }
   });
 
-  stockInput.addEventListener('input', function() {
-    stockInput.value = stockInput.value.replace(/[^\d]/g, '');
-  });
-
-  /* ===== Validation ===== */
-  function validateCode(code) {
-    code = code.replace(/\D/g, '');
-    // A股: 6位; 港股: 5位
-    if (code.length === 6) return code;
-    if (code.length === 5) return code;
-    return null;
-  }
-
-  /* ===== Market detection ===== */
-  function getMarket(code) {
-    // 港股: 5位数字（优先按位数判断，避免与深市0/1开头冲突）
-    if (code.length === 5) return 'hk';
-    // A股: 6位数字
-    var prefix = code.charAt(0);
-    if (['6','9','5'].indexOf(prefix) !== -1) return 'sh';  // 沪市: 6xxxxx 9xxxxx 51xxxx(ETF)
-    if (['0','1','3','4','8'].indexOf(prefix) !== -1) return 'sz';  // 深市: 0xxxxx 1xxxxx(ETF) 3xxxxx 4xxxxx 8xxxxx
-    return null;
-  }
-
-  /* ===== API: Tencent (Primary) ===== */
-  // Single endpoint: web.ifzq.gtimg.cn returns both kline data AND quote info (UTF-8 JSON)
-  // The qt sub-object contains name at index 1, price at index 3
-  function fetchTencentData(code) {
-    var market = getMarket(code);
-    if (!market) return Promise.reject(new Error('不支持的股票代码前缀'));
-    var ticker = market === 'sh' ? 'sh' + code
-               : market === 'sz' ? 'sz' + code
-               : 'hk' + code;
-    var url = 'https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param=' + ticker + ',day,,,60,qfq';
-    return fetch(url)
-      .then(function(r) { if (!r.ok) throw new Error('腾讯接口 '+r.status); return r.json(); })
-      .then(function(data) {
-        var kd = data.data && data.data[ticker];
+  /* =========================================================
+   * 5. 数据访问：超时 / 取消 / 去重 / 缓存
+   * ========================================================= */
+  function fetchTencentData(code, market, signal) {
+    var ticker = market + code;
+    var url = CONFIG.API_URL + '?param=' + ticker + ',day,,,' + CONFIG.KLINE_DAYS + ',qfq';
+    return fetch(url, { signal: signal })
+      .then(function (r) {
+        if (!r.ok) throw new Error('腾讯接口 ' + r.status);
+        return r.json();
+      })
+      .then(function (data) {
+        var kd = data && data.data && data.data[ticker];
         if (!kd) throw new Error('腾讯接口无此股票数据');
-        
-        // qt is an OBJECT, not an array!
-        // qt.ticker[1] = name, qt.ticker[3] = price
+
+        // qt 为对象：qt[ticker][1] 为名称，qt[ticker][3] 为最新价
         var qt = kd.qt;
-        if (!qt) throw new Error('腾讯接口quote数据不完整');
+        if (!qt) throw new Error('腾讯接口 quote 数据不完整');
         var inner = qt[ticker];
-        if (!inner || !Array.isArray(inner)) throw new Error('腾讯接口quote数据格式错误');
+        if (!inner || !Array.isArray(inner)) throw new Error('腾讯接口 quote 数据格式错误');
         var name = inner[1] || ('股票' + code);
         var price = parseFloat(inner[3]) || 0;
         if (!price) throw new Error('腾讯接口解析不到价格');
-        
-        // Extract K-line data
+
         var days = kd.qfqday || kd.day || [];
-        if (!Array.isArray(days) || days.length === 0) throw new Error('腾讯kline无日线数据');
-        
-        // Format: [date, open, close, high, low, volume]
+        if (!Array.isArray(days) || days.length === 0) throw new Error('腾讯 kline 无日线数据');
+
+        // 行格式：[日期, 开盘, 收盘, 最高, 最低, 成交量]
+        // 关键：价格无效时同时跳过价格与 K 线，保证两个数组严格等长、下标对齐
         var prices = [];
         var klines = [];
         for (var i = 0; i < days.length; i++) {
-          if (!days[i] || !Array.isArray(days[i]) || days[i].length < 3) continue;
-          if (typeof days[i][2] === 'object') continue;
-          var p = parseFloat(days[i][2]);
-          if (!isNaN(p)) prices.push(p);
-          // Build OHLC for chart
+          var row = days[i];
+          if (!row || !Array.isArray(row) || row.length < 3) continue;
+          if (typeof row[2] === 'object') continue;
+          var close = parseFloat(row[2]);
+          if (isNaN(close)) continue;
+          prices.push(close);
           klines.push({
-            date: days[i][0],
-            open: parseFloat(days[i][1]) || p,
-            close: p,
-            high: parseFloat(days[i][3]) || p,
-            low: parseFloat(days[i][4]) || p
+            date: row[0],
+            open: parseFloat(row[1]) || close,
+            close: close,
+            high: parseFloat(row[3]) || close,
+            low: parseFloat(row[4]) || close
           });
         }
-        if (prices.length === 0) throw new Error('腾讯kline解析不到收盘价');
-        
-        return { name: name, price: price, prices: prices, klines: klines };
+        if (prices.length === 0) throw new Error('腾讯 kline 解析不到收盘价');
+
+        return { name: name, price: price, prices: prices, klines: klines, source: '腾讯' };
       });
   }
 
-  /* ===== Fetch with retry ===== */
-  // Only use Tencent API — single request returns name + price + klines (all UTF-8 JSON)
-  function fetchAllData(code) {
-    return new Promise(function(resolve, reject) {
-      var timer = setTimeout(function() {
-        reject(new Error('数据请求超时，请检查网络连接'));
-      }, 8000);
+  // 单次网络请求：8 秒超时（AbortController），新查询会取消旧查询
+  function requestData(code, market) {
+    if (currentAbort) {
+      currentAbort.cancelled = true;
+      currentAbort.controller.abort();
+    }
+    var rec = { controller: new AbortController(), timedOut: false, cancelled: false };
+    currentAbort = rec;
 
-      fetchTencentData(code)
-        .then(function(result) {
-          clearTimeout(timer);
-          if (result && result.prices && result.prices.length > 0) {
-            resolve({ 
-              prices: result.prices, 
-              klines: result.klines,
-              name: result.name, 
-              source: '腾讯', 
-              quotePrice: result.price 
-            });
-          } else {
-            reject(new Error('未获取到有效数据，请检查股票代码是否正确'));
-          }
-        })
-        .catch(function(err) {
-          clearTimeout(timer);
-          reject(new Error('数据获取失败: ' + (err.message || '未知错误')));
-        });
+    var timer = setTimeout(function () {
+      rec.timedOut = true;
+      rec.controller.abort();                          // 真正中止网络请求，避免悬挂
+    }, CONFIG.REQUEST_TIMEOUT_MS);
+
+    return fetchTencentData(code, market, rec.controller.signal)
+      .then(function (result) {
+        clearTimeout(timer);
+        return result;
+      })
+      .catch(function (err) {
+        clearTimeout(timer);
+        if (rec.timedOut) throw new Error('数据请求超时，请检查网络连接后重试');
+        if (rec.cancelled || (err && err.name === 'AbortError')) {
+          var cancelled = new Error('查询已取消');
+          cancelled.cancelled = true;
+          throw cancelled;
+        }
+        throw new Error('数据获取失败: ' + ((err && err.message) || '未知错误'));
+      });
+  }
+
+  // 统一出口：相同代码进行中请求去重 + 短期结果缓存，避免重复请求
+  function fetchAllData(code, market) {
+    var key = market + code;
+
+    if (inflight && inflight.key === key) return inflight.promise;
+
+    var cached = resultCache[key];
+    if (cached && Date.now() - cached.time < CONFIG.CACHE_TTL_MS) {
+      return Promise.resolve(cached.data);
+    }
+
+    var promise = requestData(code, market).then(function (data) {
+      resultCache[key] = { time: Date.now(), data: data };
+      return data;
+    });
+    inflight = { key: key, promise: promise };
+    var release = function () { if (inflight && inflight.promise === promise) inflight = null; };
+    promise.then(release, release);
+    return promise;
+  }
+
+  /* =========================================================
+   * 6. 图表模块（复用 DOM，通过显式入参绘制，不读取隐式全局）
+   * ========================================================= */
+  var chart = { opts: null, refs: null, rafId: null };
+  var resizeTimer = null;
+
+  function createChartShell(container) {
+    container.innerHTML = '';
+
+    var card = document.createElement('div');
+    card.className = 'chart-card';
+
+    var title = document.createElement('div');
+    title.className = 'table-card-title';
+    title.setAttribute('role', 'button');
+    title.setAttribute('tabindex', '0');
+    title.setAttribute('aria-expanded', 'true');
+
+    var titleText = document.createElement('span');
+    titleText.className = 'chart-title-text';
+
+    var icon = document.createElement('span');
+    icon.className = 'toggle-icon';
+    icon.setAttribute('aria-hidden', 'true');
+    icon.innerHTML = '&#9650;';
+
+    title.appendChild(titleText);
+    title.appendChild(icon);
+
+    var wrap = document.createElement('div');
+    wrap.className = 'chart-canvas-wrap show';
+    var canvas = document.createElement('canvas');
+    canvas.id = 'klineCanvas';
+    canvas.setAttribute('role', 'img');
+    wrap.appendChild(canvas);
+
+    card.appendChild(title);
+    card.appendChild(wrap);
+    container.appendChild(card);
+
+    var refs = { card: card, title: title, titleText: titleText, icon: icon, wrap: wrap, canvas: canvas };
+
+    function toggleCollapse() {
+      var show = !wrap.classList.contains('show');
+      wrap.classList.toggle('show', show);
+      title.setAttribute('aria-expanded', String(show));
+      icon.innerHTML = show ? '&#9650;' : '&#9660;';
+      if (show) scheduleChartPaint();
+    }
+    title.addEventListener('click', toggleCollapse);
+    title.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleCollapse(); }
+    });
+
+    return refs;
+  }
+
+  function updateChartTitle() {
+    var o = chart.opts;
+    if (!o || !chart.refs) return;
+    var sub = o.projectedPrice
+      ? ' (预测收盘: ' + D(o.projectedPrice, o.digits) + ')'
+      : '';
+    chart.refs.titleText.innerHTML = C.escapeHtml(o.name) + '(' + C.escapeHtml(o.code) + ') K线图与均线'
+      + '<span class="chart-title-sub">' + sub + '</span>';
+  }
+
+  // 绘制入口：首次创建卡片，后续复用（保留折叠状态，避免闪烁）
+  function drawKLineChart(opts) {
+    chart.opts = opts;
+    if (!chart.refs) chart.refs = createChartShell(chartArea);
+    updateChartTitle();
+    scheduleChartPaint();
+  }
+
+  function setProjectedPrice(price) {
+    if (!chart.opts) return;
+    chart.opts.projectedPrice = price;
+    updateChartTitle();
+    scheduleChartPaint();
+  }
+
+  // 合并同一帧内的多次绘制请求
+  function scheduleChartPaint() {
+    // chart 由 var 提升，顶层 applyTheme() 早于其初始化执行，需防止读取 undefined
+    if (!chart || !chart.opts) return;
+    if (chart.rafId) cancelAnimationFrame(chart.rafId);
+    chart.rafId = requestAnimationFrame(function () {
+      chart.rafId = null;
+      paintChart();
     });
   }
 
-  /* ===== K-Line Chart ===== */
-  var _chartData = null; // cached for redraw on resize/theme change
+  function paintChart() {
+    var o = chart.opts;
+    var refs = chart.refs;
+    if (!o || !refs) return;
+    if (!refs.wrap.classList.contains('show')) return;    // 折叠时不绘制，展开时再画
 
-  function drawKLineChart(container, klines, ma5Arr, ma10Arr, ma20Arr, name, code, projectedPrice, highlightIdx) {
-    container.innerHTML = '';
-    _chartData = { klines: klines, ma5Arr: ma5Arr, ma10Arr: ma10Arr, ma20Arr: ma20Arr, name: name, code: code };
+    var canvas = refs.canvas;
+    var W = Math.round(canvas.parentElement.getBoundingClientRect().width - 24);  // 减去容器内边距
+    if (W <= 0) return;                                   // 容器不可见时跳过，避免 0 宽画布
+    var dpr = window.devicePixelRatio || 1;
+    var H = parseInt(getComputedStyle(canvas).height, 10) || 360;
 
-    // Title (clickable to toggle)
-    var card = document.createElement('div');
-    card.className = 'chart-card';
-    var title = document.createElement('div');
-    title.className = 'table-card-title';
-    var subtitle = projectedPrice ? ' (预测收盘: ' + projectedPrice.toFixed(priceDigits) + ')' : '';
-    title.innerHTML = name + '(' + code + ') K线图与均线<span style="font-size:12px;color:var(--text-secondary);margin-left:8px;">' + subtitle + '</span> <span class="toggle-icon">&#9650;</span>';
-    var canvasWrap = document.createElement('div');
-    canvasWrap.className = 'chart-canvas-wrap';
-    var canvas = document.createElement('canvas');
-    canvas.id = 'klineCanvas';
-    canvasWrap.appendChild(canvas);
-    card.appendChild(title);
-    card.appendChild(canvasWrap);
-    container.appendChild(card);
+    canvas.width = W * dpr;
+    canvas.height = H * dpr;
+    canvas.style.width = W + 'px';
+    canvas.style.height = H + 'px';
+    canvas.setAttribute('aria-label',
+      o.name + '(' + o.code + ') K线图，共 ' + o.klines.length + ' 个交易日，含 MA5/MA10/MA20 均线'
+      + (o.projectedPrice ? '，末位为预测收盘 ' + D(o.projectedPrice, o.digits) : ''));
 
-    // Default: expanded
-    canvasWrap.classList.add('show');
-    title.querySelector('.toggle-icon').innerHTML = '&#9660;';
-    // Wait for layout to settle before rendering canvas
-    setTimeout(function() { requestAnimationFrame(renderChart); }, 100);
+    var ctx = canvas.getContext('2d');
+    ctx.scale(dpr, dpr);
 
-    // Toggle handler
-    title.addEventListener('click', function() {
-      canvasWrap.classList.toggle('show');
-      var icon = title.querySelector('.toggle-icon');
-      icon.innerHTML = canvasWrap.classList.contains('show') ? '&#9650;' : '&#9660;';
-      if (canvasWrap.classList.contains('show')) {
-        requestAnimationFrame(renderChart);
-      }
+    var isDark = document.documentElement.hasAttribute('data-theme');
+    var pal = CONFIG.COLORS[isDark ? 'dark' : 'light'];
+    var winColor = pal.win;
+    var lossColor = pal.loss;
+    var digits = o.digits;
+
+    ctx.fillStyle = pal.bg;
+    ctx.fillRect(0, 0, W, H);
+
+    var padL = 55, padR = 10, padT = 15, padB = 30;
+    var chartW = W - padL - padR;
+    var chartH = H - padT - padB;
+
+    var hasProjection = o.projectedPrice != null && o.projectedPrice > 0;
+    var totalPts = o.klines.length + (hasProjection ? 1 : 0);
+    if (totalPts <= 0) return;
+
+    // 预测均线只计算一次，供坐标范围、连线与标签复用
+    var future = null;
+    if (hasProjection) {
+      future = {
+        ma5: C.calcProjectedMA(o.prices, o.projectedPrice, 5),
+        ma10: C.calcProjectedMA(o.prices, o.projectedPrice, 10),
+        ma20: C.calcProjectedMA(o.prices, o.projectedPrice, 20)
+      };
+    }
+
+    // 收集所有参与缩放的价格
+    var allVals = [];
+    var i;
+    for (i = 0; i < o.klines.length; i++) {
+      var k = o.klines[i];
+      if (k.high) allVals.push(k.high);
+      if (k.low) allVals.push(k.low);
+      if (k.close) allVals.push(k.close);
+    }
+    [o.ma5Arr, o.ma10Arr, o.ma20Arr].forEach(function (arr) {
+      if (!arr) return;
+      for (var m = 0; m < arr.length; m++) { if (arr[m] != null) allVals.push(arr[m]); }
     });
+    if (hasProjection) {
+      allVals.push(o.projectedPrice);
+      if (future.ma5 != null) allVals.push(future.ma5);
+      if (future.ma10 != null) allVals.push(future.ma10);
+      if (future.ma20 != null) allVals.push(future.ma20);
+    }
+    if (allVals.length === 0) return;
 
-    function renderChart() {
-      var rect = canvas.parentElement.getBoundingClientRect();
-      var dpr = window.devicePixelRatio || 1;
-      var W = rect.width - 24; // minus padding
-      var H = parseInt(getComputedStyle(canvas).height, 10) || 360;
-      canvas.width = W * dpr;
-      canvas.height = H * dpr;
-      canvas.style.width = W + 'px';
-      canvas.style.height = H + 'px';
-      var ctx = canvas.getContext('2d');
-      ctx.scale(dpr, dpr);
+    var minV = Math.min.apply(null, allVals);
+    var maxV = Math.max.apply(null, allVals);
+    var range = maxV - minV || 1;
+    var margin = range * 0.08;
+    minV -= margin;
+    maxV += margin;
+    range = maxV - minV;
 
-      // Colors
-      var isDark = document.documentElement.hasAttribute('data-theme');
-      var bg = isDark ? '#1e293b' : '#ffffff';
-      var gridColor = isDark ? '#334155' : '#f0f0f0';
-      var textColor = isDark ? '#94a3b8' : '#6b7280';
-      var winColor = '#dc2626';   // red (up)
-      var lossColor = '#16a34a';  // green (down)
-      var ma5Color = '#f59e0b';   // amber
-      var ma10Color = '#8b5cf6';  // purple
-      var ma20Color = '#06b6d4';  // cyan
-      var futureColor = '#ff6b00'; // orange for projected
+    function xPos(index) { return padL + (index + 0.5) / totalPts * chartW; }
+    function yPos(value) { return padT + (1 - (value - minV) / range) * chartH; }
 
-      ctx.fillStyle = bg;
-      ctx.fillRect(0, 0, W, H);
+    // 网格与纵轴刻度
+    ctx.strokeStyle = pal.grid;
+    ctx.lineWidth = 0.5;
+    var gridLines = 5;
+    for (var g = 0; g <= gridLines; g++) {
+      var gy = padT + g / gridLines * chartH;
+      ctx.beginPath();
+      ctx.moveTo(padL, gy);
+      ctx.lineTo(W - padR, gy);
+      ctx.stroke();
+      ctx.fillStyle = pal.text;
+      ctx.font = '10px sans-serif';
+      ctx.textAlign = 'right';
+      ctx.fillText(D(maxV - g / gridLines * range, digits), padL - 5, gy + 3);
+    }
 
-      var padL = 55, padR = 10, padT = 15, padB = 30;
-      var chartW = W - padL - padR;
-      var chartH = H - padT - padB;
+    // 图例（依次推进 x 坐标，避免文字互相重叠）
+    var legend = [];
+    if (o.ma5Arr) legend.push({ text: 'MA5', color: pal.ma5 });
+    if (o.ma10Arr) legend.push({ text: 'MA10', color: pal.ma10 });
+    if (o.ma20Arr) legend.push({ text: 'MA20', color: pal.ma20 });
+    if (hasProjection) legend.push({ text: '预测', color: pal.future });
+    ctx.font = '11px sans-serif';
+    ctx.textAlign = 'left';
+    var lx = padL + 5;
+    for (i = 0; i < legend.length; i++) {
+      ctx.fillStyle = legend[i].color;
+      ctx.fillText(legend[i].text, lx, padT + 12);
+      lx += ctx.measureText(legend[i].text).width + 12;
+    }
 
-      // Total points: real klines + 1 future
-      var totalPts = klines.length + 1;
+    // 支撑/压力/斐波那契标注层
+    if (o.levels && o.levels.length) {
+      for (var sl = 0; sl < o.levels.length; sl++) {
+        var level = o.levels[sl];
+        var lineColor = null;
+        if (level.type === 'resistance' && state.showSupport) lineColor = pal.resistance;
+        else if (level.type === 'support' && state.showSupport) lineColor = pal.support;
+        else if (level.type === 'fibonacci' && state.showFibonacci) lineColor = pal.fib;
+        if (!lineColor) continue;
+        if (level.price < minV || level.price > maxV) continue;
 
-      // Collect all prices (kline close + highs + lows + MA lines + projected values)
-      var allVals = [];
-      for (var i = 0; i < klines.length; i++) {
-        var k = klines[i];
-        if (k.high) allVals.push(k.high);
-        if (k.low) allVals.push(k.low);
-        if (k.close) allVals.push(k.close);
-      }
-      if (ma5Arr) for (var i = 0; i < ma5Arr.length; i++) { if (ma5Arr[i] != null) allVals.push(ma5Arr[i]); }
-      if (ma10Arr) for (var i = 0; i < ma10Arr.length; i++) { if (ma10Arr[i] != null) allVals.push(ma10Arr[i]); }
-      if (ma20Arr) for (var i = 0; i < ma20Arr.length; i++) { if (ma20Arr[i] != null) allVals.push(ma20Arr[i]); }
+        var yLevel = yPos(level.price);
+        if (yLevel < padT - 5 || yLevel > padT + chartH + 5) continue;
 
-      // Add projected price and projected MAs to scale
-      if (projectedPrice != null && projectedPrice > 0) {
-        allVals.push(projectedPrice);
-        // Compute projected MAs for future day
-        var histLen = historyPrices.length;
-        var futureMA5 = calcProjectedMA(historyPrices, projectedPrice, 5);
-        var futureMA10 = calcProjectedMA(historyPrices, projectedPrice, 10);
-        var futureMA20 = calcProjectedMA(historyPrices, projectedPrice, 20);
-        if (futureMA5 != null) allVals.push(futureMA5);
-        if (futureMA10 != null) allVals.push(futureMA10);
-        if (futureMA20 != null) allVals.push(futureMA20);
-      }
-
-      if (allVals.length === 0) return;
-
-      var minV = Math.min.apply(null, allVals);
-      var maxV = Math.max.apply(null, allVals);
-      var range = maxV - minV || 1;
-      var margin = range * 0.08;
-      minV -= margin;
-      maxV += margin;
-      range = maxV - minV;
-
-      function xPos(i) { return padL + (i + 0.5) / totalPts * chartW; }
-      function yPos(v) { return padT + (1 - (v - minV) / range) * chartH; }
-
-      // Grid lines
-      ctx.strokeStyle = gridColor;
-      ctx.lineWidth = 0.5;
-      var gridLines = 5;
-      for (var g = 0; g <= gridLines; g++) {
-        var y = padT + g / gridLines * chartH;
-        ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(W - padR, y); ctx.stroke();
-        var val = maxV - g / gridLines * range;
-        ctx.fillStyle = textColor;
-        ctx.font = '10px sans-serif';
-        ctx.textAlign = 'right';
-        ctx.fillText(val.toFixed(priceDigits), padL - 5, y + 3);
-      }
-
-      // MA legend
-      ctx.font = '11px sans-serif';
-      var lx = padL + 5;
-      var ly = padT + 12;
-      if (ma5Arr) { ctx.fillStyle = ma5Color; ctx.fillText('MA5', lx, ly); lx += ctx.measureText('MA5').width + 12; }
-      if (ma10Arr) { ctx.fillStyle = ma10Color; ctx.fillText('MA10', lx, ly); lx += ctx.measureText('MA10').width + 12; }
-      if (ma20Arr) { ctx.fillStyle = ma20Color; ctx.fillText('MA20', lx, ly); }
-      if (projectedPrice != null) { ctx.fillStyle = futureColor; ctx.fillText('预测', lx, ly); }
-
-      // ===== Draw Support/Resistance Levels =====
-      if (supportLevels && supportLevels.length > 0) {
-        var rightLabelX = W - padR + 2; // slightly past chart area on the right
-        var labelOffsetY = 0;
-        for (var sl = 0; sl < supportLevels.length; sl++) {
-          var level = supportLevels[sl];
-          var show = false;
-          var lineColor = '';
-          var dashPattern = [6, 4];
-
-          if (level.type === 'resistance' && toggleSupport) { show = true; lineColor = '#ef4444'; }
-          else if (level.type === 'support' && toggleSupport) { show = true; lineColor = '#22c55e'; }
-          else if (level.type === 'fibonacci' && toggleFibonacci) { show = true; lineColor = '#f97316'; }
-
-          if (!show) continue;
-
-          if (level.price < minV || level.price > maxV) continue;
-
-          var yLevel = yPos(level.price);
-          if (yLevel < padT - 5 || yLevel > padT + chartH + 5) continue;
-
-          ctx.save();
-          ctx.setLineDash(dashPattern);
-          ctx.strokeStyle = lineColor;
-          ctx.lineWidth = 1.2;
-          ctx.beginPath();
-          ctx.moveTo(padL, yLevel);
-          ctx.lineTo(W - padR, yLevel);
-          ctx.stroke();
-          ctx.restore();
-
-          // Label on the right
-          ctx.save();
-          ctx.setLineDash([]);
-          ctx.fillStyle = lineColor;
-          ctx.font = 'bold 10px sans-serif';
-          ctx.textAlign = 'right';
-          var labelText = level.label + ' ' + level.price.toFixed(priceDigits);
-          ctx.fillText(labelText, W - padR - 2, yLevel - 4);
-          ctx.restore();
-        }
-      }
-
-      // Draw MA lines (extend to future day)
-      function drawLine(arr, color, extendToFuture, futureVal) {
-        if (!arr) return;
-        ctx.strokeStyle = color;
-        ctx.lineWidth = 1;
+        ctx.save();
+        ctx.setLineDash([6, 4]);
+        ctx.strokeStyle = lineColor;
+        ctx.lineWidth = 1.2;
         ctx.beginPath();
-        var started = false;
-        for (var i = 0; i < arr.length; i++) {
-          if (arr[i] == null) continue;
-          var x = xPos(i), y = yPos(arr[i]);
-          if (!started) { ctx.moveTo(x, y); started = true; }
-          else ctx.lineTo(x, y);
-        }
-        // Extend to future day
-        if (extendToFuture && futureVal != null) {
-          var fx = xPos(arr.length), fy = yPos(futureVal);
-          ctx.lineTo(fx, fy);
-        }
+        ctx.moveTo(padL, yLevel);
+        ctx.lineTo(W - padR, yLevel);
         ctx.stroke();
-      }
-      drawLine(ma20Arr, ma20Color, !!projectedPrice,
-        projectedPrice != null ? calcProjectedMA(historyPrices, projectedPrice, 20) : null);
-      drawLine(ma10Arr, ma10Color, !!projectedPrice,
-        projectedPrice != null ? calcProjectedMA(historyPrices, projectedPrice, 10) : null);
-      drawLine(ma5Arr, ma5Color, !!projectedPrice,
-        projectedPrice != null ? calcProjectedMA(historyPrices, projectedPrice, 5) : null);
+        ctx.restore();
 
-      // Draw vertical separator line between real and future
-      var futureX = xPos(klines.length);
+        // 标签加半透明底衬，避免与 K 线重叠时不可读
+        var labelText = level.label + ' ' + D(level.price, digits);
+        ctx.font = 'bold 10px sans-serif';
+        var labelW = ctx.measureText(labelText).width;
+        ctx.fillStyle = isDark ? 'rgba(30,41,59,0.85)' : 'rgba(255,255,255,0.85)';
+        ctx.fillRect(W - padR - labelW - 6, yLevel - 13, labelW + 6, 13);
+        ctx.fillStyle = lineColor;
+        ctx.textAlign = 'right';
+        ctx.fillText(labelText, W - padR - 2, yLevel - 4);
+      }
+    }
+
+    // 均线（最后一根连到预测点）
+    function drawLine(arr, color, futureValue) {
+      if (!arr) return;
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      var started = false;
+      for (var p = 0; p < arr.length; p++) {
+        if (arr[p] == null) continue;
+        var px = xPos(p), py = yPos(arr[p]);
+        if (!started) { ctx.moveTo(px, py); started = true; }
+        else ctx.lineTo(px, py);
+      }
+      if (started && futureValue != null) ctx.lineTo(xPos(arr.length), yPos(futureValue));
+      ctx.stroke();
+    }
+    drawLine(o.ma20Arr, pal.ma20, future ? future.ma20 : null);
+    drawLine(o.ma10Arr, pal.ma10, future ? future.ma10 : null);
+    drawLine(o.ma5Arr, pal.ma5, future ? future.ma5 : null);
+
+    // 真实 / 预测 分界线
+    if (hasProjection) {
+      var futureX = xPos(o.klines.length);
       ctx.setLineDash([3, 3]);
       ctx.strokeStyle = isDark ? '#475569' : '#cbd5e1';
       ctx.lineWidth = 1;
@@ -524,536 +678,393 @@
       ctx.stroke();
       ctx.setLineDash([]);
 
-      // Label "未来"
-      ctx.fillStyle = textColor;
+      ctx.fillStyle = pal.text;
       ctx.font = '9px sans-serif';
       ctx.textAlign = 'center';
       ctx.fillText('未来', futureX, padT - 3);
+    }
 
-      // Draw candlesticks (real only)
-      var barW = Math.max(2, Math.min(12, chartW / totalPts * 0.6));
-      for (var i = 0; i < klines.length; i++) {
-        var k = klines[i];
-        var open = k.open, close = k.close, high = k.high, low = k.low;
-        var isWin = close >= open;
-        var color = isWin ? winColor : lossColor;
+    // K 线
+    var barW = Math.max(2, Math.min(12, chartW / totalPts * 0.6));
+    for (i = 0; i < o.klines.length; i++) {
+      var item = o.klines[i];
+      var color = item.close >= item.open ? winColor : lossColor;
 
-        // Wick
-        ctx.strokeStyle = color;
-        ctx.lineWidth = 1;
-        ctx.beginPath();
-        ctx.moveTo(xPos(i), yPos(high));
-        ctx.lineTo(xPos(i), yPos(low));
-        ctx.stroke();
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(xPos(i), yPos(item.high));
+      ctx.lineTo(xPos(i), yPos(item.low));
+      ctx.stroke();
 
-        // Body
-        var yOpen = yPos(open), yClose = yPos(close);
-        var bodyTop = Math.min(yOpen, yClose);
-        var bodyH = Math.max(Math.abs(yOpen - yClose), 1);
-        ctx.fillStyle = color;
-        ctx.fillRect(xPos(i) - barW / 2, bodyTop, barW, bodyH);
-      }
+      var yOpen = yPos(item.open);
+      var yClose = yPos(item.close);
+      ctx.fillStyle = color;
+      ctx.fillRect(xPos(i) - barW / 2, Math.min(yOpen, yClose), barW, Math.max(Math.abs(yOpen - yClose), 1));
+    }
 
-      // Draw projected future candlestick (ghost/dashed)
-      if (projectedPrice != null && projectedPrice > 0) {
-        var lastK = klines[klines.length - 1];
-        var prevClose = lastK ? lastK.close : projectedPrice;
-        var isUp = projectedPrice >= prevClose;
-        var fBarW = barW * 1.2;
-        var fx = xPos(klines.length);
-        var yPrev = yPos(prevClose);
-        var yProj = yPos(projectedPrice);
-        var yBodyTop = Math.min(yPrev, yProj);
-        var yBodyBot = Math.max(yPrev, yProj);
-        var bodyH = Math.max(yBodyBot - yBodyTop, 1);
+    // 预测 K 线（虚线 + 半透明）
+    if (hasProjection) {
+      var lastK = o.klines[o.klines.length - 1];
+      var prevClose = lastK ? lastK.close : o.projectedPrice;
+      var isUp = o.projectedPrice >= prevClose;
+      var fBarW = barW * 1.2;
+      var fx = xPos(o.klines.length);
+      var yPrev = yPos(prevClose);
+      var yProjected = yPos(o.projectedPrice);
+      var top = Math.min(yPrev, yProjected);
+      var bodyH = Math.max(Math.max(yPrev, yProjected) - top, 1);
 
-        // Dashed body
-        ctx.save();
-        ctx.setLineDash([3, 2]);
-        ctx.strokeStyle = isUp ? winColor : lossColor;
-        ctx.lineWidth = 1.5;
-        ctx.fillStyle = isUp ? winColor : lossColor;
-        ctx.globalAlpha = 0.5;
-        // Wick
-        ctx.beginPath();
-        ctx.moveTo(fx, yPos(projectedPrice));
-        ctx.lineTo(fx, yBodyTop + bodyH + 5); // extend a bit
-        ctx.stroke();
-        // Body
-        ctx.fillRect(fx - fBarW / 2, yBodyTop, fBarW, bodyH);
-        ctx.restore();
+      ctx.save();
+      ctx.setLineDash([3, 2]);
+      ctx.strokeStyle = isUp ? winColor : lossColor;
+      ctx.fillStyle = isUp ? winColor : lossColor;
+      ctx.lineWidth = 1.5;
+      ctx.globalAlpha = 0.5;
+      ctx.beginPath();
+      ctx.moveTo(fx, yProjected);
+      ctx.lineTo(fx, top + bodyH + 5);
+      ctx.stroke();
+      ctx.fillRect(fx - fBarW / 2, top, fBarW, bodyH);
+      ctx.restore();
 
-        // Projected MA labels on the right side
-        var futureMA5 = calcProjectedMA(historyPrices, projectedPrice, 5);
-        var futureMA10 = calcProjectedMA(historyPrices, projectedPrice, 10);
-        var futureMA20 = calcProjectedMA(historyPrices, projectedPrice, 20);
-
-        var labelX = fx + fBarW / 2 + 4;
-        ctx.font = 'bold 9px sans-serif';
-        ctx.textAlign = 'left';
-        var ly2 = yBodyTop + 2;
-        if (futureMA5 != null) {
-          ctx.fillStyle = ma5Color;
-          ctx.fillText('MA5:' + futureMA5.toFixed(priceDigits), labelX, ly2);
-          ly2 += 12;
-        }
-        if (futureMA10 != null) {
-          ctx.fillStyle = ma10Color;
-          ctx.fillText('MA10:' + futureMA10.toFixed(priceDigits), labelX, ly2);
-          ly2 += 12;
-        }
-        if (futureMA20 != null) {
-          ctx.fillStyle = ma20Color;
-          ctx.fillText('MA20:' + futureMA20.toFixed(priceDigits), labelX, ly2);
-        }
-      }
-
-      // Date labels (real klines only)
-      ctx.fillStyle = textColor;
-      ctx.font = '9px sans-serif';
-      ctx.textAlign = 'center';
-      var step = Math.max(1, Math.floor(klines.length / 8));
-      for (var i = 0; i < klines.length; i += step) {
-        var label = klines[i].date || '';
-        if (label && label.length > 5) label = label.substr(5); // show MM-DD
-        ctx.fillText(label, xPos(i), H - 5);
+      // 预测均线数值标签
+      var labelX = fx + fBarW / 2 + 4;
+      ctx.font = 'bold 9px sans-serif';
+      ctx.textAlign = 'left';
+      var ly2 = top + 2;
+      var futureLabels = [
+        { key: 'MA5', value: future.ma5, color: pal.ma5 },
+        { key: 'MA10', value: future.ma10, color: pal.ma10 },
+        { key: 'MA20', value: future.ma20, color: pal.ma20 }
+      ];
+      for (i = 0; i < futureLabels.length; i++) {
+        if (futureLabels[i].value == null) continue;
+        ctx.fillStyle = futureLabels[i].color;
+        ctx.fillText(futureLabels[i].key + ':' + D(futureLabels[i].value, digits), labelX, ly2);
+        ly2 += 12;
       }
     }
 
-    // Auto-expand on first render if chart area is visible
-    // Don't auto-expand; user clicks to toggle
-  }
-
-  /* ===== MA Calculation ===== */
-  function calcMA(prices, period) {
-    if (!prices || prices.length < period) return null;
-    var slice = prices.slice(-period);
-    var sum = 0;
-    for (var i = 0; i < slice.length; i++) sum += slice[i];
-    return sum / period;
-  }
-
-  function calcProjectedMA(histPrices, projectedPrice, period) {
-    if (!histPrices || histPrices.length < period - 1) return null;
-    var window = [];
-    var start = histPrices.length - (period - 1);
-    for (var i = start; i < histPrices.length; i++) window.push(histPrices[i]);
-    window.push(projectedPrice);
-    var sum = 0;
-    for (var i = 0; i < window.length; i++) sum += window[i];
-    return sum / period;
-  }
-
-  /* ===== Market Status ===== */
-  function detectMarketStatus() {
-    var now = new Date();
-    var day = now.getDay();
-    if (day === 0 || day === 6) return 'closed';
-    var h = now.getHours();
-    var m = now.getMinutes();
-    var timeMin = h * 60 + m;
-    // 港股交易时段: 9:30-12:00 (570-720), 13:00-16:00 (780-960)
-    // 港股集合竞价: 9:00-9:30 (540-570)
-    if ((timeMin >= 570 && timeMin < 720) || (timeMin >= 780 && timeMin < 960) || (timeMin >= 540 && timeMin < 570)) {
-      return 'intraday';
+    // 日期标签（仅真实数据）
+    ctx.fillStyle = pal.text;
+    ctx.font = '9px sans-serif';
+    ctx.textAlign = 'center';
+    var step = Math.max(1, Math.floor(o.klines.length / 8));
+    for (i = 0; i < o.klines.length; i += step) {
+      var dateLabel = o.klines[i].date || '';
+      if (dateLabel.length > 5) dateLabel = dateLabel.substr(5);   // 只显示 MM-DD
+      ctx.fillText(dateLabel, xPos(i), H - 5);
     }
-    return 'closed';
   }
 
-  /* ===== Support/Resistance Toggles ===== */
-  toggleSupResEl.addEventListener('change', function() { toggleSupport = this.checked; redrawChartWithLevel(); });
-  toggleFibEl.addEventListener('change', function() { toggleFibonacci = this.checked; redrawChartWithLevel(); });
+  // 窗口尺寸变化时防抖重绘，避免画布尺寸与容器不一致
+  window.addEventListener('resize', function () {
+    if (!chart.opts) return;
+    if (resizeTimer) clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(scheduleChartPaint, 150);
+  });
 
-  /* ===== Support/Resistance Level Calculation ===== */
-  function computeSupportResistance(klines, prices) {
-    var levels = [];
-    var n = prices.length;
-    var lookbackShort = Math.min(20, n);
-    var lookbackMid = Math.min(60, n);
+  /* =========================================================
+   * 7. 推演表格
+   * ========================================================= */
+  function renderChangeColumn(rows, caption, digits) {
+    var html = '<div class="table-scroll"><table class="data-table data-table-half">';
+    html += '<caption class="sr-only">' + C.escapeHtml(caption) + '</caption>';
+    html += '<thead><tr>'
+      + '<th scope="col">涨跌幅</th><th scope="col">预测收盘价</th><th scope="col">关键位</th>'
+      + '<th scope="col">MA5</th><th scope="col">MA10</th><th scope="col">MA20</th>'
+      + '</tr></thead><tbody>';
 
-    // Short-term resistance/support (recent N highs/lows)
-    var shortHigh = -Infinity, shortLow = Infinity;
-    for (var i = n - lookbackShort; i < n; i++) {
-      if (klines[i] && klines[i].high) shortHigh = Math.max(shortHigh, klines[i].high);
-      if (klines[i] && klines[i].low) shortLow = Math.min(shortLow, klines[i].low);
-    }
-    if (shortHigh !== -Infinity) levels.push({ price: shortHigh, type: 'resistance', label: '短期压力' });
-    if (shortLow !== Infinity) levels.push({ price: shortLow, type: 'support', label: '短期支撑' });
+    for (var i = 0; i < rows.length; i++) {
+      var row = rows[i];
+      var cls = row.pct === 0 ? 'price-base' : (row.pct > 0 ? 'price-win' : 'price-loss');
+      var rowCls = row.pct === state.selectedPct ? ' selected-row' : '';
+      var keyText = row.keyLevel ? C.escapeHtml(row.keyLevel.label) + ' ' + D(row.keyLevel.price, digits) : '-';
 
-    // Mid-term resistance/support
-    var midHigh = -Infinity, midLow = Infinity;
-    for (var i = n - lookbackMid; i < n; i++) {
-      if (klines[i] && klines[i].high) midHigh = Math.max(midHigh, klines[i].high);
-      if (klines[i] && klines[i].low) midLow = Math.min(midLow, klines[i].low);
-    }
-    if (midHigh !== -Infinity) levels.push({ price: midHigh, type: 'resistance', label: '中期压力' });
-    if (midLow !== Infinity) levels.push({ price: midLow, type: 'support', label: '中期支撑' });
-
-    // Fibonacci retracement levels (based on recent 60 or all)
-    var fibRange = Math.min(60, n);
-    var fibHigh = -Infinity, fibLow = Infinity;
-    for (var i = n - fibRange; i < n; i++) {
-      if (klines[i]) {
-        fibHigh = Math.max(fibHigh, klines[i].high);
-        fibLow = Math.min(fibLow, klines[i].low);
-      }
-    }
-    if (fibHigh !== -Infinity && fibLow !== Infinity && fibHigh > fibLow) {
-      var diff = fibHigh - fibLow;
-      var fibRatios = [0.382, 0.5, 0.618];
-      for (var f = 0; f < fibRatios.length; f++) {
-        var fb = fibHigh - diff * fibRatios[f];
-        if (fb > fibLow && fb < fibHigh) {
-          levels.push({ price: fb, type: 'fibonacci', label: '斐波那契' });
-        }
-      }
-    }
-
-    // Deduplicate: merge levels very close together (within 0.3%)
-    var unique = [];
-    for (var j = 0; j < levels.length; j++) {
-      var found = false;
-      for (var k = 0; k < unique.length; k++) {
-        if (Math.abs(levels[j].price - unique[k].price) / levels[j].price < 0.003) {
-          found = true; break;
-        }
-      }
-      if (!found) unique.push(levels[j]);
-    }
-
-    supportLevels = unique.sort(function(a, b) { return b.price - a.price; });
-    return supportLevels;
-  }
-
-  /* ===== Redraw chart with current level visibility ===== */
-  function redrawChartWithLevel() {
-    if (!_chartData) return;
-    var projectedPrice = selectedPct !== null ? chartBasePrices[chartBasePrices.length - 1] * (1 + selectedPct / 100) : null;
-    drawKLineChart(chartArea, chartRawKlines, _chartData.ma5Arr, _chartData.ma10Arr, _chartData.ma20Arr,
-      _chartData.name, _chartData.code, projectedPrice, selectedPct);
-  }
-
-  /* ===== Build Change Table (with key-level column) ===== */
-  function buildChangeTable(title, prices, basePrice, changes) {
-    chartBasePrices = prices; // cache for chart redraw
-    var html = '<div class="table-card">';
-    html += '<div class="table-card-title">' + title + '</div>';
-    html += '<div class="dual-tables">';
-
-    var posChanges = changes.filter(function(c) { return c >= 0; });
-    var negChanges = changes.filter(function(c) { return c < 0; });
-
-    html += '<div class="dual-col">';
-    html += buildChangeTableColumn(posChanges, prices, basePrice, true);
-    html += '</div>';
-    html += '<div class="dual-col">';
-    html += buildChangeTableColumn(negChanges, prices, basePrice, false);
-    html += '</div>';
-    html += '</div></div></div>';
-    return html;
-  }
-
-  function buildChangeTableColumn(changes, prices, basePrice, isPositive) {
-    var html = '<table class="data-table data-table-half"><thead><tr>';
-    html += '<th>涨跌幅</th><th>预测收盘价</th><th>关键位</th><th>MA5</th><th>MA10</th><th>MA20</th>';
-    html += '</tr></thead><tbody>';
-
-    for (var i = 0; i < changes.length; i++) {
-      var pct = changes[i];
-      var projectedPrice = basePrice * (1 + pct / 100);
-      var ma5 = calcProjectedMA(prices, projectedPrice, 5);
-      var ma10 = calcProjectedMA(prices, projectedPrice, 10);
-      var ma20 = calcProjectedMA(prices, projectedPrice, 20);
-
-      // Find nearest key level
-      var keyLevelInfo = findNearestKeyLevel(projectedPrice);
-
-      var sign = pct >= 0 ? '+' : '';
-      var cls = pct === 0 ? 'price-base' : (pct > 0 ? 'price-win' : 'price-loss');
-      var rowCls = pct === selectedPct ? ' selected-row' : '';
-
-      html += '<tr class="change-row' + rowCls + '" data-pct="' + pct + '">';
-      html += '<td class="' + cls + '"><strong>' + sign + pct + '%</strong></td>';
-      html += '<td class="' + cls + '">' + projectedPrice.toFixed(priceDigits) + '</td>';
-      html += '<td class="' + (keyLevelInfo.highlight ? 'key-highlight' : '') + '">' + keyLevelInfo.text + '</td>';
-      html += '<td>' + (ma5 !== null ? ma5.toFixed(priceDigits) : '-') + '</td>';
-      html += '<td>' + (ma10 !== null ? ma10.toFixed(priceDigits) : '-') + '</td>';
-      html += '<td>' + (ma20 !== null ? ma20.toFixed(priceDigits) : '-') + '</td>';
+      html += '<tr class="change-row' + rowCls + '" data-pct="' + row.pct + '" tabindex="0"'
+        + ' title="按回车在图表中预览该涨跌幅对应的预测价与均线">';
+      html += '<td class="' + cls + '"><strong>' + C.formatPct(row.pct) + '</strong></td>';
+      html += '<td class="' + cls + '">' + D(row.price, digits) + '</td>';
+      html += '<td class="' + (row.keyHighlight ? 'key-highlight' : '') + '">' + keyText + '</td>';
+      html += '<td>' + D(row.ma5, digits) + '</td>';
+      html += '<td>' + D(row.ma10, digits) + '</td>';
+      html += '<td>' + D(row.ma20, digits) + '</td>';
       html += '</tr>';
     }
-
-    html += '</tbody></table>';
+    html += '</tbody></table></div>';
     return html;
   }
 
-  function findNearestKeyLevel(projectedPrice) {
-    if (!supportLevels || supportLevels.length === 0) {
-      return { text: '-', highlight: false };
-    }
-    var nearest = null;
-    var nearestDist = Infinity;
-    for (var i = 0; i < supportLevels.length; i++) {
-      var dist = Math.abs(supportLevels[i].price - projectedPrice);
-      if (dist < nearestDist) {
-        nearestDist = dist;
-        nearest = supportLevels[i];
-      }
-    }
-    if (!nearest) return { text: '-', highlight: false };
-    var pctDiff = nearestDist / nearest.price;
-    var isHighlight = pctDiff < 0.005; // within 0.5%
-    return {
-      text: nearest.label + ' ' + nearest.price.toFixed(priceDigits),
-      highlight: isHighlight
-    };
+  function renderChangeTable(title, rows, digits) {
+    var positive = rows.filter(function (r) { return r.pct >= 0; });
+    var negative = rows.filter(function (r) { return r.pct < 0; });
+
+    var html = '<div class="table-card">';
+    html += '<div class="table-card-title">' + C.escapeHtml(title) + '</div>';
+    html += '<div class="dual-tables">';
+    html += '<div class="dual-col">' + renderChangeColumn(positive, '涨幅推演（0% 至 +' + CONFIG.CHANGE_LIMIT + '%）', digits) + '</div>';
+    html += '<div class="dual-col">' + renderChangeColumn(negative, '跌幅推演（-' + CONFIG.CHANGE_LIMIT + '% 至 0%）', digits) + '</div>';
+    html += '</div></div>';
+    return html;
   }
 
-  /* ===== Generate Copy Text ===== */
-  function generateCopyText(name, code, close, status, changes, prices, baseMAs) {
-    var text = name + '(' + code + ') 均线测算\n';
-    text += '最新价: ' + close.toFixed(priceDigits) + ' | 状态: ' + (status === 'intraday' ? '盘中' : '已收盘') + '\n';
-    text += '数据源: ' + sourceName + '\n';
-    text += '========================================\n\n';
+  function bindRowEvents() {
+    var rows = tablesWrapper.querySelectorAll('.change-row');
+    for (var i = 0; i < rows.length; i++) {
+      rows[i].addEventListener('click', activateRow);
+      rows[i].addEventListener('keydown', function (e) {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); activateRow.call(this, e); }
+      });
+    }
+  }
 
-    var m5s = baseMAs.ma5 ? baseMAs.ma5.toFixed(priceDigits) : 'N/A';
-    var m10s = baseMAs.ma10 ? baseMAs.ma10.toFixed(priceDigits) : 'N/A';
-    var m20s = baseMAs.ma20 ? baseMAs.ma20.toFixed(priceDigits) : 'N/A';
-    text += '当前MA5: ' + m5s + '  MA10: ' + m10s + '  MA20: ' + m20s + '\n\n';
+  function activateRow() {
+    selectPct(parseInt(this.dataset.pct, 10));
+  }
+
+  // 选中某档涨跌幅：只更新高亮与图表投影，使用与表格完全一致的基准价
+  function selectPct(pct) {
+    state.selectedPct = pct;
+    var rows = tablesWrapper.querySelectorAll('.change-row');
+    for (var i = 0; i < rows.length; i++) {
+      rows[i].classList.toggle('selected-row', parseInt(rows[i].dataset.pct, 10) === pct);
+    }
+    setProjectedPrice(state.basePrice * (1 + pct / 100));
+  }
+
+  /* =========================================================
+   * 8. 状态栏 / 复制文本
+   * ========================================================= */
+  function renderStatusBar() {
+    var tagCls = state.marketStatus === 'intraday' ? 'tag-intraday' : 'tag-closed';
+    var tagTxt = state.marketStatus === 'intraday' ? '盘中' : '已收盘';
+
+    var html = '<span class="stock-name-display">' + C.escapeHtml(state.name)
+      + ' (' + C.escapeHtml(state.code) + ')</span>';
+    html += '<span class="price-display">最新价: <strong class="price-win">'
+      + D(state.lastPrice, state.digits) + '</strong></span>';
+
+    html += '<span class="ma-inline">';
+    [['MA5', state.baseMAs.ma5], ['MA10', state.baseMAs.ma10], ['MA20', state.baseMAs.ma20]].forEach(function (item) {
+      if (item[1] == null) return;
+      var cls = state.lastPrice > item[1] ? 'ma-above' : 'ma-below';
+      html += '<span>' + item[0] + ': <span class="ma-val ' + cls + '">' + D(item[1], state.digits) + '</span></span>';
+    });
+    html += '</span>';
+    html += '<span class="status-tag ' + tagCls + '">' + tagTxt + '</span>';
+    html += '<span class="price-display data-source">数据源: ' + C.escapeHtml(state.sourceName) + '</span>';
+
+    statusBar.innerHTML = html;
+    statusBar.classList.remove('hidden');
+  }
+
+  function generateCopyText() {
+    var digits = state.digits;
+    var text = state.name + '(' + state.code + ') 均线测算\n';
+    text += '最新价: ' + D(state.lastPrice, digits)
+      + ' | 状态: ' + (state.marketStatus === 'intraday' ? '盘中' : '已收盘') + '\n';
+    text += '数据源: ' + state.sourceName + '\n';
+    text += '========================================\n\n';
+    text += '当前MA5: ' + D(state.baseMAs.ma5, digits)
+      + '  MA10: ' + D(state.baseMAs.ma10, digits)
+      + '  MA20: ' + D(state.baseMAs.ma20, digits) + '\n\n';
     text += '涨跌幅\t预测价\tMA5\tMA10\tMA20\n';
     text += '----------------------------------------\n';
 
-    for (var i = 0; i < changes.length; i++) {
-      var pct = changes[i];
-      var sign = pct >= 0 ? '+' : '';
-      var projP = close * (1 + pct / 100);
-      var ma5v = calcProjectedMA(prices, projP, 5);
-      var ma10v = calcProjectedMA(prices, projP, 10);
-      var ma20v = calcProjectedMA(prices, projP, 20);
-      text += sign + pct + '%\t' + projP.toFixed(priceDigits) + '\t'
-        + (ma5v ? ma5v.toFixed(priceDigits) : '-') + '\t'
-        + (ma10v ? ma10v.toFixed(priceDigits) : '-') + '\t'
-        + (ma20v ? ma20v.toFixed(priceDigits) : '-') + '\n';
+    for (var i = 0; i < state.rows.length; i++) {
+      var row = state.rows[i];
+      text += C.formatPct(row.pct) + '\t' + D(row.price, digits) + '\t'
+        + D(row.ma5, digits) + '\t' + D(row.ma10, digits) + '\t' + D(row.ma20, digits) + '\n';
     }
-
     return text;
   }
 
-  /* ===== Main Query ===== */
+  /* =========================================================
+   * 9. 主流程
+   * ========================================================= */
+  function renderResult(code, market, data) {
+    var prices = data.prices;
+    var klines = data.klines || [];
+    var name = data.name || ('股票' + code);
+
+    saveHistory(code, name);
+
+    var marketStatus = C.detectMarketStatus(market);      // 必须传入 market：两市场交易时段不同
+    var lastPrice = prices[prices.length - 1];
+    var historyPrices = prices.slice(-CONFIG.KLINE_DAYS);
+    var digits = C.getPriceDigits(code, lastPrice);
+    var start = Math.max(0, klines.length - historyPrices.length);
+    var alignedKlines = klines.slice(start, start + historyPrices.length);
+
+    // 盘中以昨日收盘为基准推演次日，已收盘以今日收盘为基准
+    var basePrice = marketStatus === 'intraday'
+      ? (prices.length >= 2 ? prices[prices.length - 2] : lastPrice)
+      : lastPrice;
+
+    var levels = C.computeSupportResistance(alignedKlines, historyPrices);
+    var maArrs = C.buildMAArrays(historyPrices);
+    var changes = C.getChangeList(CONFIG.CHANGE_LIMIT);
+    var rows = C.buildProjectionRows(historyPrices, basePrice, changes, levels);
+
+    state.code = code;
+    state.market = market;
+    state.name = name;
+    state.marketStatus = marketStatus;
+    state.sourceName = data.source || '未知';
+    state.prices = historyPrices;
+    state.klines = alignedKlines;
+    state.lastPrice = lastPrice;
+    state.basePrice = basePrice;
+    state.digits = digits;
+    state.levels = levels;
+    state.ma = maArrs;
+    state.rows = rows;
+    state.selectedPct = null;                             // 重置选中态，避免沿用上一只股票的高亮
+    state.baseMAs = {
+      ma5: C.calcMA(historyPrices, 5),
+      ma10: C.calcMA(historyPrices, 10),
+      ma20: C.calcMA(historyPrices, 20)
+    };
+
+    renderStatusBar();
+    srToggleBar.classList.remove('hidden');
+
+    var title = marketStatus === 'intraday'
+      ? name + '(' + code + ') - 盘中推演（以昨日收盘 ' + D(basePrice, digits) + ' 为基准）'
+      : name + '(' + code + ') - 明日推演（以今日收盘 ' + D(basePrice, digits) + ' 为基准）';
+    tablesWrapper.innerHTML = renderChangeTable(title, rows, digits);
+    bindRowEvents();
+
+    resultTitle.textContent = name + '(' + code + ') 均线测算';
+    resultSection.classList.add('show');
+
+    drawKLineChart({
+      klines: alignedKlines,
+      prices: historyPrices,
+      ma5Arr: maArrs.ma5,
+      ma10Arr: maArrs.ma10,
+      ma20Arr: maArrs.ma20,
+      name: name,
+      code: code,
+      digits: digits,
+      levels: levels,
+      projectedPrice: null
+    });
+
+    lastResultText = generateCopyText();
+  }
+
   function doQuery() {
-    var rawCode = stockInput.value.trim();
-    var code = validateCode(rawCode);
+    var code = C.validateCode(stockInput.value);
     if (!code) {
-      showError('请输入有效的股票代码（A股6位数字，港股5位数字）');
+      showError('请输入有效的股票代码：A股 6 位数字，港股 5 位数字');
+      stockInput.focus();
+      return;
+    }
+    var market = C.getMarket(code);
+    if (!market) {
+      showError('暂不支持该代码段：沪市 6/9/5 开头，深市 0/1/3/4/8 开头，港股 5 位数字');
       stockInput.focus();
       return;
     }
 
     hideError();
-    loadingOverlay.classList.add('show');
-    loadingText.textContent = '正在获取数据...';
+    hideAutocomplete();
+
+    var seq = ++querySeq;
+    showLoading(true);
+    emptyState.classList.add('hidden');
+    statusBar.classList.add('hidden');
     resultSection.classList.remove('show');
-    statusBar.style.display = 'none';
-    emptyState.style.display = 'none';
+    lastResultText = '';
 
-    var changes = [];
-    for (var p = -10; p <= 10; p++) changes.push(p);
-
-    fetchAllData(code)
-      .then(function(data) {
-        console.log('[DOQUERY] Success:', data.name, data.source);
-        var prices = data.prices;
-        var klines = data.klines || [];
-        var name = data.name || ('股票' + code);
-        var src = data.source || '未知';
-
-        // Save history
-        saveHistory(code, name);
-
-        // Detect status
-        marketStatus = detectMarketStatus();
-        closePrice = prices[prices.length - 1];
-        // Use up to 60 trading days of data
-        historyPrices = prices.slice(-60);
-        sourceName = src;
-
-        // Slice klines to match historyPrices length
-        var alignedKlines = klines.slice(-historyPrices.length);
-        chartRawKlines = alignedKlines;  // cache for chart redraw on toggle
-
-        // 价格小数位数：A股ETF(51xx/15xx)为3位；港股低价股(股价<1港元)为3位；其余为2位
-        var isAStockEtf = code.length === 6 && (code.charAt(0) === '5' || code.charAt(0) === '1');
-        var isLowPriceHk = code.length === 5 && closePrice < 1;
-        priceDigits = (isAStockEtf || isLowPriceHk) ? 3 : 2;
-
-        // Current MAs
-        var baseMAs = {
-          ma5: calcMA(historyPrices, 5),
-          ma10: calcMA(historyPrices, 10),
-          ma20: calcMA(historyPrices, 20)
-        };
-
-        // Compute support/resistance levels
-        computeSupportResistance(alignedKlines, historyPrices);
-
-        // MA arrays for chart (full history + projected)
-        var ma5Arr = [], ma10Arr = [], ma20Arr = [];
-        for (var i = 0; i < historyPrices.length; i++) {
-          ma5Arr.push(calcMA(historyPrices.slice(0, i + 1), 5));
-          ma10Arr.push(calcMA(historyPrices.slice(0, i + 1), 10));
-          ma20Arr.push(calcMA(historyPrices.slice(0, i + 1), 20));
-        }
-
-        // Status bar with inline MA values
-        var tagCls = marketStatus === 'intraday' ? 'tag-intraday' : 'tag-closed';
-        var tagTxt = marketStatus === 'intraday' ? '盘中' : '已收盘';
-        var maHtml = '<span class="ma-inline">';
-        if (baseMAs.ma5 != null) {
-          var ma5cls = closePrice > baseMAs.ma5 ? 'ma-above' : 'ma-below';
-          maHtml += '<span>MA5: <span class="ma-val ' + ma5cls + '">' + baseMAs.ma5.toFixed(priceDigits) + '</span></span>';
-        }
-        if (baseMAs.ma10 != null) {
-          var ma10cls = closePrice > baseMAs.ma10 ? 'ma-above' : 'ma-below';
-          maHtml += '<span>MA10: <span class="ma-val ' + ma10cls + '">' + baseMAs.ma10.toFixed(priceDigits) + '</span></span>';
-        }
-        if (baseMAs.ma20 != null) {
-          var ma20cls = closePrice > baseMAs.ma20 ? 'ma-above' : 'ma-below';
-          maHtml += '<span>MA20: <span class="ma-val ' + ma20cls + '">' + baseMAs.ma20.toFixed(priceDigits) + '</span></span>';
-        }
-        maHtml += '</span>';
-
-        statusBar.innerHTML = '<span class="stock-name-display">' + name + ' (' + code + ')</span>'
-          + '<span class="price-display">最新价: <strong style="color:var(--win)">' + closePrice.toFixed(priceDigits) + '</strong></span>'
-          + maHtml
-          + '<span class="status-tag ' + tagCls + '">' + tagTxt + '</span>'
-          + '<span class="price-display" style="font-size:11px;color:var(--text-secondary)">数据源: ' + src + '</span>';
-        statusBar.style.display = 'flex';
-
-        // Show SR toggle bar
-        srToggleBar.style.display = 'flex';
-
-        // Build tables
-        var html = '';
-
-        if (marketStatus === 'intraday') {
-          // 盘中: 用昨收价作为基准推演
-          var yesterdayClose = prices.length >= 2 ? prices[prices.length - 2] : closePrice;
-          html += buildChangeTable(name + '(' + code + ') - 盘中推演（以昨日收盘' + yesterdayClose.toFixed(priceDigits) + '为基准）',
-            historyPrices, yesterdayClose, changes);
-        } else {
-          // 已收盘: 用今日真实收盘价推演明日
-          html += buildChangeTable(name + '(' + code + ') - 明日推演（以今日收盘' + closePrice.toFixed(priceDigits) + '为基准）',
-            historyPrices, closePrice, changes);
-        }
-
-        tablesWrapper.innerHTML = html;
-        resultTitle.textContent = name + '(' + code + ') 均线测算';
-        resultSection.classList.add('show');
-
-        // Bind click events on change rows
-        var rows = tablesWrapper.querySelectorAll('.change-row');
-        for (var r = 0; r < rows.length; r++) {
-          (function(row) {
-            row.addEventListener('click', function() {
-              var pct = parseInt(this.dataset.pct, 10);
-              selectAndRedraw(pct, name, code);
-            });
-          })(rows[r]);
-        }
-
-        // Draw K-line chart
-        drawKLineChart(chartArea, alignedKlines, ma5Arr, ma10Arr, ma20Arr, name, code);
-
-        lastResultText = generateCopyText(name, code, closePrice, marketStatus, changes, historyPrices, baseMAs);
+    fetchAllData(code, market)
+      .then(function (data) {
+        if (seq !== querySeq) return;                     // 已有更新的查询，丢弃过期响应
+        renderResult(code, market, data);
       })
-      .catch(function(err) {
-        showError(err.message || '查询失败，请检查股票代码后重试');
-        emptyState.style.display = 'block';
+      .catch(function (err) {
+        if (seq !== querySeq || (err && err.cancelled)) return;
+        showError((err && err.message) || '查询失败，请检查股票代码后重试');
+        emptyState.classList.remove('hidden');
       })
-      .finally(function() {
-        loadingOverlay.classList.remove('show');
+      .finally(function () {
+        if (seq === querySeq) showLoading(false);         // 仅当前查询负责关闭遮罩
       });
   }
 
-  /* ===== Select change % and redraw chart ===== */
-  function selectAndRedraw(pct, name, code) {
-    selectedPct = pct;
-
-    // Re-render tables with new selection highlight
-    var basePrice = historyPrices[historyPrices.length - 1];
-    var projectedPrice = basePrice * (1 + pct / 100);
-    var ma5 = calcProjectedMA(historyPrices, projectedPrice, 5);
-    var ma10 = calcProjectedMA(historyPrices, projectedPrice, 10);
-    var ma20 = calcProjectedMA(historyPrices, projectedPrice, 20);
-
-    // Update table row highlights
-    var rows = tablesWrapper.querySelectorAll('.change-row');
-    for (var i = 0; i < rows.length; i++) {
-      if (parseInt(rows[i].dataset.pct, 10) === pct) {
-        rows[i].classList.add('selected-row');
-      } else {
-        rows[i].classList.remove('selected-row');
-      }
-    }
-
-    // Redraw chart with projected price
-    var ma5Arr = [], ma10Arr = [], ma20Arr = [];
-    for (var i = 0; i < historyPrices.length; i++) {
-      ma5Arr.push(calcMA(historyPrices.slice(0, i + 1), 5));
-      ma10Arr.push(calcMA(historyPrices.slice(0, i + 1), 10));
-      ma20Arr.push(calcMA(historyPrices.slice(0, i + 1), 20));
-    }
-    drawKLineChart(chartArea, chartRawKlines, ma5Arr, ma10Arr, ma20Arr, name, code, projectedPrice, pct);
-  }
-
-  /* ===== Buttons ===== */
-  // Expose for browser automation testing
-  window._doQueryInline = doQuery;
+  /* =========================================================
+   * 10. 事件绑定
+   * ========================================================= */
   queryBtn.addEventListener('click', doQuery);
-  clearBtn.addEventListener('click', function() {
+  // 暴露给外部自动化测试使用
+  window._doQueryInline = doQuery;
+
+  clearBtn.addEventListener('click', function () {
+    if (currentAbort) {
+      currentAbort.cancelled = true;
+      currentAbort.controller.abort();
+    }
     stockInput.value = '';
     resultSection.classList.remove('show');
-    statusBar.style.display = 'none';
-    emptyState.style.display = 'block';
+    srToggleBar.classList.add('hidden');
+    statusBar.classList.add('hidden');
+    emptyState.classList.remove('hidden');
     hideError();
+    hideAutocomplete();
+    lastResultText = '';
+    state.selectedPct = null;
+    chart.opts = null;
     stockInput.focus();
   });
 
-  /* ===== Copy ===== */
-  copyBtn.addEventListener('click', function() {
-    if (!lastResultText) return;
+  copyBtn.addEventListener('click', function () {
+    if (!lastResultText) { showError('暂无可复制的内容，请先查询'); return; }
+
+    function done(ok) {
+      copyBtn.textContent = ok ? '已复制!' : '复制失败，请手动选择表格复制';
+      copyBtn.classList.toggle('is-done', ok);
+      if (copyTimer) clearTimeout(copyTimer);
+      copyTimer = setTimeout(function () {
+        copyBtn.textContent = '复制表格数据';
+        copyBtn.classList.remove('is-done');
+      }, 1800);
+    }
+
     if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(lastResultText).then(function() {
-        copyBtn.textContent = '已复制!';
-        copyBtn.style.background = 'var(--green)';
-        setTimeout(function() { copyBtn.textContent = '复制表格数据'; copyBtn.style.background = ''; }, 1500);
-      }).catch(fallbackCopy);
+      navigator.clipboard.writeText(lastResultText)
+        .then(function () { done(true); })
+        .catch(function () { done(fallbackCopy()); });
     } else {
-      fallbackCopy();
+      done(fallbackCopy());
     }
   });
 
   function fallbackCopy() {
     var ta = document.createElement('textarea');
     ta.value = lastResultText;
+    ta.setAttribute('readonly', 'readonly');
     ta.style.position = 'fixed';
+    ta.style.top = '-1000px';
     ta.style.opacity = '0';
     document.body.appendChild(ta);
     ta.select();
-    try { document.execCommand('copy'); } catch(e) {}
+    var ok = false;
+    try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
     document.body.removeChild(ta);
-    copyBtn.textContent = '已复制!';
-    setTimeout(function() { copyBtn.textContent = '复制表格数据'; }, 1500);
+    return ok;
   }
 
-  /* ===== Error ===== */
-  function showError(msg) {
-    errorToast.textContent = msg;
-    errorToast.classList.add('show');
-    setTimeout(hideError, 5000);
-  }
-  function hideError() {
-    errorToast.classList.remove('show');
-  }
+  /* ===== 标注层开关 ===== */
+  toggleSupResEl.addEventListener('change', function () {
+    state.showSupport = this.checked;
+    scheduleChartPaint();
+  });
+  toggleFibEl.addEventListener('change', function () {
+    state.showFibonacci = this.checked;
+    scheduleChartPaint();
+  });
 
 })();
 

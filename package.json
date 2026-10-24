@@ -1,0 +1,9 @@
+{
+  "name": "stock-ma-tool",
+  "version": "1.0.0",
+  "private": true,
+  "description": "纯前端 A股/港股均线测算工具（零依赖，双击 HTML 即可运行）",
+  "scripts": {
+    "test": "node --test \"test/**/*.test.js\""
+  }
+}
