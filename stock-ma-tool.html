@@ -22,9 +22,9 @@
   <div class="input-section">
     <div class="input-row">
       <div class="input-group" style="flex:2;">
-        <label for="stockInput">股票代码/ETF代码（6位数字）</label>
+        <label for="stockInput">股票代码/ETF代码（A股6位，港股5位）</label>
         <div class="input-wrapper">
-          <input type="text" id="stockInput" placeholder="例：600519 / 510300 / 159915" maxlength="6" inputmode="numeric" autocomplete="off">
+          <input type="text" id="stockInput" placeholder="例：600519 / 510300 / 00700" maxlength="6" inputmode="numeric" autocomplete="off">
           <div class="autocomplete-list" id="autocompleteList"></div>
         </div>
       </div>
@@ -65,7 +65,7 @@
   <!-- 空状态提示 -->
   <div class="empty-state" id="emptyState">
     <div class="icon">&#128202;</div>
-    <p>请输入6位股票代码或ETF代码，点击查询获取均线测算结果</p>
+    <p>请输入股票代码，点击查询获取均线测算结果<br><span style="font-size:12px;color:var(--text-secondary)">A股：6位数字 | 港股：5位数字</span></p>
   </div>
 </div>
 
@@ -209,15 +209,20 @@
   /* ===== Validation ===== */
   function validateCode(code) {
     code = code.replace(/\D/g, '');
-    return code.length === 6 ? code : null;
+    // A股: 6位; 港股: 5位
+    if (code.length === 6) return code;
+    if (code.length === 5) return code;
+    return null;
   }
 
   /* ===== Market detection ===== */
   function getMarket(code) {
+    // 港股: 5位数字（优先按位数判断，避免与深市0/1开头冲突）
+    if (code.length === 5) return 'hk';
+    // A股: 6位数字
     var prefix = code.charAt(0);
     if (['6','9','5'].indexOf(prefix) !== -1) return 'sh';  // 沪市: 6xxxxx 9xxxxx 51xxxx(ETF)
-    if (['0','3','4','8'].indexOf(prefix) !== -1) return 'sz';  // 深市: 0xxxxx 3xxxxx 4xxxxx 8xxxxx
-    if (['1'].indexOf(prefix) !== -1) return 'sz';  // 深市ETF: 15xxxx
+    if (['0','1','3','4','8'].indexOf(prefix) !== -1) return 'sz';  // 深市: 0xxxxx 1xxxxx(ETF) 3xxxxx 4xxxxx 8xxxxx
     return null;
   }
 
@@ -227,7 +232,9 @@
   function fetchTencentData(code) {
     var market = getMarket(code);
     if (!market) return Promise.reject(new Error('不支持的股票代码前缀'));
-    var ticker = market === 'sh' ? 'sh' + code : 'sz' + code;
+    var ticker = market === 'sh' ? 'sh' + code
+               : market === 'sz' ? 'sz' + code
+               : 'hk' + code;
     var url = 'https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param=' + ticker + ',day,,,60,qfq';
     return fetch(url)
       .then(function(r) { if (!r.ok) throw new Error('腾讯接口 '+r.status); return r.json(); })
@@ -645,9 +652,9 @@
     var h = now.getHours();
     var m = now.getMinutes();
     var timeMin = h * 60 + m;
-    // Trading: 9:30-11:30 (570-690), 13:00-15:00 (780-900)
-    // Pre-open: 9:15-9:25 (555-565)
-    if ((timeMin >= 570 && timeMin < 690) || (timeMin >= 780 && timeMin < 900) || (timeMin >= 555 && timeMin < 570)) {
+    // 港股交易时段: 9:30-12:00 (570-720), 13:00-16:00 (780-960)
+    // 港股集合竞价: 9:00-9:30 (540-570)
+    if ((timeMin >= 570 && timeMin < 720) || (timeMin >= 780 && timeMin < 960) || (timeMin >= 540 && timeMin < 570)) {
       return 'intraday';
     }
     return 'closed';
@@ -836,7 +843,7 @@
     var rawCode = stockInput.value.trim();
     var code = validateCode(rawCode);
     if (!code) {
-      showError('请输入有效的6位股票代码');
+      showError('请输入有效的股票代码（A股6位数字，港股5位数字）');
       stockInput.focus();
       return;
     }
@@ -873,8 +880,10 @@
         var alignedKlines = klines.slice(-historyPrices.length);
         chartRawKlines = alignedKlines;  // cache for chart redraw on toggle
 
-        // ETF (51xx / 15xx) prices are 3 decimal places
-        priceDigits = (code.charAt(0) === '5' || code.charAt(0) === '1') ? 3 : 2;
+        // 价格小数位数：A股ETF(51xx/15xx)为3位；港股低价股(股价<1港元)为3位；其余为2位
+        var isAStockEtf = code.length === 6 && (code.charAt(0) === '5' || code.charAt(0) === '1');
+        var isLowPriceHk = code.length === 5 && closePrice < 1;
+        priceDigits = (isAStockEtf || isLowPriceHk) ? 3 : 2;
 
         // Current MAs
         var baseMAs = {
