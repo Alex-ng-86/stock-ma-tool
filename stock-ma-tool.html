@@ -31,15 +31,12 @@
   <section class="input-section" aria-label="股票查询">
     <div class="input-row">
       <div class="input-group input-group-grow">
-        <label for="stockInput">股票代码/ETF代码（A股6位，港股5位）</label>
+        <label for="stockInput">股票代码</label>
         <div class="input-wrapper">
           <input type="text" id="stockInput" placeholder="例：600519 / 510300 / 00700" maxlength="6" inputmode="numeric"
                  autocomplete="off" spellcheck="false" role="combobox" aria-expanded="false"
                  aria-controls="autocompleteList" aria-autocomplete="list" aria-describedby="inputHint">
           <div class="autocomplete-list" id="autocompleteList" role="listbox" aria-label="历史查询记录"></div>
-        </div>
-        <p class="input-hint" id="inputHint">A股：6 位数字（沪市 6/9/5 开头，深市 0/1/3/4/8 开头）｜港股：5 位数字（如 00700）</p>
-      </div>
       <div class="input-actions">
         <button class="btn btn-primary" id="queryBtn" type="button">查询</button>
         <button class="btn btn-secondary" id="clearBtn" type="button">清空</button>
@@ -77,7 +74,7 @@
   <!-- 空状态提示 -->
   <div class="empty-state" id="emptyState">
     <div class="icon" aria-hidden="true">&#128202;</div>
-    <p>请输入股票代码，点击查询获取均线测算结果<br><span class="empty-sub">A股：6位数字 | 港股：5位数字</span></p>
+    <p>请输入股票代码，点击查询获取均线测算结果</p>
   </div>
 
   <noscript><p class="noscript-tip">本工具依赖 JavaScript 运行，请在浏览器中启用 JavaScript 后重试。</p></noscript>
@@ -467,7 +464,7 @@
     var sub = o.projectedPrice
       ? ' (预测收盘: ' + D(o.projectedPrice, o.digits) + ')'
       : '';
-    chart.refs.titleText.innerHTML = C.escapeHtml(o.name) + '(' + C.escapeHtml(o.code) + ') K线图与均线'
+    chart.refs.titleText.innerHTML = C.escapeHtml(o.name) + '(' + C.escapeHtml(o.code) + ') K线图'
       + '<span class="chart-title-sub">' + sub + '</span>';
   }
 
