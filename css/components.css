@@ -39,16 +39,6 @@
 .status-bar .price-display { color: var(--text-secondary); }
 .status-bar .data-source { font-size: 12px; }
 
-.ma-inline {
-  display: inline-flex; gap: 8px; font-size: 12px;
-  background: var(--table-stripe);            /* 保证涨跌色对其对比度 ≥4.5:1 */
-  border: 1px solid var(--border);
-  border-radius: 4px; padding: 2px 8px; margin-left: 4px;
-}
-.ma-inline span { white-space: nowrap; }
-.ma-inline .ma-val.ma-above { color: var(--win); }   /* 均线在价格上方 */
-.ma-inline .ma-val.ma-below { color: var(--danger); } /* 均线在价格下方 */
-
 .status-tag {
   display: inline-block; padding: 2px 8px;
   border-radius: 4px; font-size: 11px; font-weight: 500;
@@ -57,6 +47,35 @@
 .tag-closed { background: #dbeafe; color: #1e40af; }
 [data-theme="dark"] .tag-intraday { background: #422006; color: #fbbf24; }
 [data-theme="dark"] .tag-closed { background: #172554; color: #60a5fa; }
+.limit-display { white-space: nowrap; }
+
+/* ===== 2b. 信号摘要卡（把均线形态与关键位压缩成一行可扫读标签） ===== */
+.signal-card {
+  display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+  padding: 10px 12px; margin-bottom: 16px;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-size: 13px;
+  box-shadow: var(--shadow);
+}
+.sig-item {
+  display: inline-flex; align-items: baseline; gap: 4px;
+  padding: 3px 10px;
+  background: var(--table-stripe);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  white-space: nowrap;
+}
+.sig-item strong { font-weight: 600; }
+/* 涨红跌绿沿用 A股习惯；浅底+深字保证对比度达标 */
+.sig-bull { background: rgba(220,38,38,0.10); border-color: rgba(220,38,38,0.35); color: var(--win); font-weight: 600; }
+.sig-bear { background: rgba(21,128,61,0.10); border-color: rgba(21,128,61,0.35); color: var(--danger); font-weight: 600; }
+.sig-neutral { color: var(--text-secondary); }
+.sig-pct { margin-left: 4px; font-size: 12px; color: var(--text-secondary); }
+.sig-tip { background: transparent; border-style: dashed; color: var(--text-secondary); font-size: 12px; }
+[data-theme="dark"] .sig-bull { background: rgba(248,113,113,0.15); border-color: rgba(248,113,113,0.40); }
+[data-theme="dark"] .sig-bear { background: rgba(74,222,128,0.15); border-color: rgba(74,222,128,0.40); }
 
 /* ===== 3. 加载遮罩 ===== */
 .loading-overlay {
@@ -122,6 +141,8 @@
 .copy-btn:hover { opacity: 0.9; }
 /* 固定色值：白字对 #15803d 的对比度 5.02:1，深浅主题均达标 */
 .copy-btn.is-done { background: #15803d; color: #fff; }
+/* 导出按钮组：桌面端右对齐，窄屏自动换行 */
+.export-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 
 /* ===== 6. 推演表格 ===== */
 .tables-wrapper { display: grid; grid-template-columns: 1fr; gap: 16px; }
@@ -212,11 +233,17 @@
   margin: 0 0 12px; font-size: 12px; box-shadow: var(--shadow);
 }
 .sr-toggle-title { color: var(--text-secondary); font-weight: 500; }
+/* 移入图表卡片后：不再自成一张卡，改为标题与画布之间的分隔条 */
+.chart-card .sr-toggle-bar-inline {
+  margin: 0; border: 0; border-radius: 0; box-shadow: none;
+  background: transparent; border-bottom: 1px solid var(--border);
+}
 .sr-toggle-item {
   display: flex; align-items: center; gap: 4px; cursor: pointer;
   user-select: none;
 }
-.sr-toggle-item input[type="checkbox"] {
+.sr-toggle-item input[type="checkbox"],
+.sr-toggle-item input[type="radio"] {
   accent-color: var(--primary); width: 14px; height: 14px; cursor: pointer;
 }
 .sr-toggle-item label { cursor: pointer; font-size: 12px; color: var(--text); }
@@ -226,6 +253,9 @@
 }
 .sr-dot-resistance { background: var(--win); }
 .sr-dot-fib { background: var(--fib); }
+/* 与 js/core.js 中 ma60 色值保持一致，便于对照图例 */
+.sr-dot-longma { background: #be185d; }
+[data-theme="dark"] .sr-dot-longma { background: #f472b6; }
 
 /* ===== 9. 空状态 ===== */
 .empty-state {

@@ -94,7 +94,8 @@ test('detectMarketStatus：港股含集合竞价 9:00 起，且收市晚于 A �
   assert.equal(C.detectMarketStatus('hk', at(2026, 10, FRIDAY, 10, 0)), 'intraday');
   assert.equal(C.detectMarketStatus('hk', at(2026, 10, FRIDAY, 12, 30)), 'closed');   // 午休
   assert.equal(C.detectMarketStatus('hk', at(2026, 10, FRIDAY, 15, 30)), 'intraday'); // A股此刻已收盘
-  assert.equal(C.detectMarketStatus('hk', at(2026, 10, FRIDAY, 16, 0)), 'closed');
+  assert.equal(C.detectMarketStatus('hk', at(2026, 10, FRIDAY, 16, 5)), 'intraday');  // 收市竞价 16:00-16:10
+  assert.equal(C.detectMarketStatus('hk', at(2026, 10, FRIDAY, 16, 10)), 'closed');   // 收市竞价结束
   // 同一时刻两个市场结论不同，用于防止再次遗漏 market 参数
   assert.notEqual(
     C.detectMarketStatus('hk', at(2026, 10, FRIDAY, 15, 30)),
@@ -102,13 +103,120 @@ test('detectMarketStatus：港股含集合竞价 9:00 起，且收市晚于 A �
   );
 });
 
-/* ===================== 均线与推演计算 ===================== */
+/* ===================== 行情时间解析与市场状态 ===================== */
 
-test('getChangeList：生成对称的涨跌幅档位', () => {
+test('parseQuoteTime：兼容 A股紧凑格式与港股斜杠格式', () => {
+  assert.equal(C.parseQuoteTime('20261023161458'), '2026-10-23');
+  assert.equal(C.parseQuoteTime('2026/10/23 16:08:14'), '2026-10-23');
+  assert.equal(C.parseQuoteTime('2026-10-23 16:08:14'), '2026-10-23');
+  assert.equal(C.parseQuoteTime(''), null);
+  assert.equal(C.parseQuoteTime(null), null);
+  assert.equal(C.parseQuoteTime('not-a-time'), null);
+});
+
+test('resolveMarketStatus：行情时间非当天一律视为已收盘（节假日防护）', () => {
+  // 周五盘中查询，但接口只返回周四的行情时间 → 已收盘，避免把旧行情当成盘中
+  assert.equal(C.resolveMarketStatus('sh', '20261022150000', at(2026, 10, FRIDAY, 10, 0)), 'closed');
+  // 行情时间为当天，且时钟处于盘中 → 盘中
+  assert.equal(C.resolveMarketStatus('sh', '20261023100000', at(2026, 10, FRIDAY, 10, 0)), 'intraday');
+  // 行情时间为当天，但时钟已收市 → 已收盘
+  assert.equal(C.resolveMarketStatus('sh', '20261023150000', at(2026, 10, FRIDAY, 15, 30)), 'closed');
+  // 解析不到行情时间 → 退回按时钟判断
+  assert.equal(C.resolveMarketStatus('sh', '', at(2026, 10, FRIDAY, 10, 0)), 'intraday');
+});
+
+/* ===================== 推演区间（涨跌停自适应） ===================== */
+
+test('buildChangeList：支持非对称区间，且始终包含 0', () => {
+  assert.deepEqual(C.buildChangeList(-10, 10), C.getChangeList(10));
+  assert.deepEqual(C.buildChangeList(-20, 20).slice(0, 2), [-20, -19]);
+  assert.deepEqual(C.buildChangeList(-20, 20).slice(-2), [19, 20]);
+  assert.deepEqual(C.buildChangeList(-10, 20).slice(-1), [20]);
+  assert.deepEqual(C.buildChangeList(0, 5), [0, 1, 2, 3, 4, 5]);           // 非法下限被归零
+  assert.deepEqual(C.buildChangeList(-5, -3), [-5, -4, -3, -2, -1, 0]);    // 非法上限被归零，补齐到 0
+});
+
+test('buildChangeList：step 步长只保留整数倍档位（港股 ±30% 压缩为 13 档）', () => {
+  const list = C.buildChangeList(-30, 30, 5);
+  assert.equal(list.length, 13);
+  assert.equal(list[0], -30);
+  assert.equal(list[list.length - 1], 30);
+  assert.ok(list.every((p) => p % 5 === 0), '应只保留 5 的倍数档位');
+  assert.ok(list.indexOf(3) === -1, '非 5 倍数档位（如 3%）应被剔除');
+  // 步长 1 等价于默认行为
+  assert.deepEqual(C.buildChangeList(-10, 10, 1), C.buildChangeList(-10, 10));
+  // 区间边界不是步长整数倍时，从区间内最小的倍数开始
+  assert.deepEqual(C.buildChangeList(-12, 12, 5), [-10, -5, 0, 5, 10]);
+  // 非法步长回退为 1
+  assert.deepEqual(C.buildChangeList(-2, 2, 0), [-2, -1, 0, 1, 2]);
+});
+
+test('getChangeList：step 参数生效且不产生 -0', () => {
+  assert.deepEqual(C.getChangeList(10, 5), [-10, -5, 0, 5, 10]);
+  assert.ok(C.getChangeList(10, 5).every((p) => !Object.is(p, -0)), '不应出现 -0');
   assert.deepEqual(C.getChangeList(2), [-2, -1, 0, 1, 2]);
   assert.deepEqual(C.getChangeList(0), [0]);
   assert.equal(C.getChangeList(10).length, 21);
 });
+
+test('deriveChangeRange：按涨跌停价反推区间，滥用值回退兜底', () => {
+  // 主板 ±10%：昨收 10，涨停 11 / 跌停 9
+  assert.deepEqual(C.deriveChangeRange(10, 11, 9, 10), { up: 10, down: 10, source: 'limit' });
+  // 创业板/科创板 ±20%
+  assert.deepEqual(C.deriveChangeRange(100, 120, 80, 10), { up: 20, down: 20, source: 'limit' });
+  // 港股无效字段（接口返回的 47/48 并非涨跌停价）→ 回退
+  assert.deepEqual(C.deriveChangeRange(380, 1.38, 658.7, 10), { up: 10, down: 10, source: 'default' });
+  // 退市股 -1 → 回退
+  assert.deepEqual(C.deriveChangeRange(3, -1, -1, 10), { up: 10, down: 10, source: 'default' });
+  // 反推幅度超过上限 → 视为无涨跌停限制，回退
+  assert.deepEqual(C.deriveChangeRange(10, 100, 1, 10), { up: 10, down: 10, source: 'default' });
+});
+
+/* ===================== 均线信号摘要 ===================== */
+
+test('findLatestCross：从后向前定位最近一次金叉/死叉', () => {
+  // MA5 在最后一根上穿 MA10
+  const ma5 = [3, 3, 4];
+  const ma10 = [4, 4, 3];
+  assert.deepEqual(C.findLatestCross(ma5, ma10), { type: 'golden', daysAgo: 0 });
+  // 最后一根下穿
+  assert.deepEqual(C.findLatestCross([5, 5, 4], [4, 4, 5]), { type: 'death', daysAgo: 0 });
+  // 倒数第二根发生金叉，最后一根保持在上方
+  assert.deepEqual(C.findLatestCross([3, 4, 5], [4, 3, 3]), { type: 'golden', daysAgo: 1 });
+  // 数据不足或未发生交叉
+  assert.equal(C.findLatestCross([1], [1]), null);
+  assert.equal(C.findLatestCross([1, 2, 3], [1, 2, 3]), null);
+  assert.equal(C.findLatestCross(null, [1, 2]), null);
+});
+
+test('buildSignalSummary：多头/空头排列与价格相对均线位置', () => {
+  const maArrs = {
+    ma5: [9, 10, 11],
+    ma10: [8, 9, 10],
+    ma20: [7, 8, 9],
+    ma60: [6, 7, 8]
+  };
+  const levels = [
+    { price: 12, label: '短期压力' },
+    { price: 10, label: '短期支撑' }
+  ];
+  const s = C.buildSignalSummary(maArrs, 11, levels);
+  assert.equal(s.arrangement, 'bull');
+  assert.ok(s.arrangementText.indexOf('多头排列') !== -1);
+  assert.equal(s.vsMa20, 'above');
+  assert.equal(s.vsMa60, 'above');
+  assert.equal(s.support.label, '短期支撑');
+  assert.equal(s.resistance.label, '短期压力');
+  assert.ok(s.support.pctDiff > 0);
+
+  // 数据不足时不猜测
+  const empty = C.buildSignalSummary({}, 11, []);
+  assert.equal(empty.arrangement, null);
+  assert.equal(empty.arrangementText, '均线数据不足');
+  assert.equal(empty.vsMa20, null);
+});
+
+/* ===================== 均线与推演计算 ===================== */
 
 test('calcMA：不足周期返回 null，否则取最近 N 根均值', () => {
   const prices = [10, 11, 12, 13, 14, 15];
@@ -146,7 +254,17 @@ test('buildMAArrays：逐日序列与 calcMA 逐点计算结果一致', () => {
   assert.deepEqual(arrs.ma5.slice(0, 4), [null, null, null, null]);
   assert.equal(arrs.ma5[4], 12);
   assert.equal(arrs.ma5[11], 19);   // (17+18+19+20+21)/5
-  assert.deepEqual(C.buildMAArrays([]), { ma5: [], ma10: [], ma20: [] });
+
+  // 默认周期为 CONFIG.MA_PERIODS（含长周期），空数组时返回各周期的空序列
+  const empty = C.buildMAArrays([]);
+  C.CONFIG.MA_PERIODS.forEach((period) => {
+    assert.deepEqual(empty['ma' + period], [], `ma${period} 应为空数组`);
+  });
+
+  // 可自定义周期，且只返回传入的周期
+  const custom = C.buildMAArrays([1, 2, 3], [2]);
+  assert.deepEqual(Object.keys(custom), ['ma2']);
+  assert.deepEqual(custom.ma2, [null, 1.5, 2.5]);
 });
 
 test('computeSupportResistance：短/中期高低点、斐波那契与去重排序', () => {
@@ -244,12 +362,23 @@ test('escapeHtml：转义接口返回的外部文本，避免注入', () => {
 });
 
 test('CONFIG：常量集中管理，避免散落硬编码', () => {
-  assert.equal(C.CONFIG.KLINE_DAYS, 60);
+  assert.equal(C.CONFIG.KLINE_DAYS, 260);          // 需 ≥ 250 才能算出 MA250
   assert.equal(C.CONFIG.CHANGE_LIMIT, 10);
+  assert.equal(C.CONFIG.CHANGE_LIMIT_HK, 30);      // 港股无涨跌停限制，兜底放宽到 ±30%
   assert.equal(C.CONFIG.HISTORY_MAX, 20);
+  assert.deepEqual(C.CONFIG.MA_PERIODS, [5, 10, 20, 60, 120, 250]);
+  assert.deepEqual(C.CONFIG.CHANGE_STEPS, [1, 5]); // 表格可选档位步长
+  assert.ok(C.CONFIG.CHANGE_LIMIT_MAX >= 20, '推演范围上限需覆盖创业板/科创板 ±20%');
+  assert.ok(C.CONFIG.CHANGE_LIMIT_MAX >= C.CONFIG.CHANGE_LIMIT_HK, '上限需容纳港股兜底区间');
+  // 图表显示密度：只裁剪绘制窗口，不影响均线与推演计算所用历史
+  assert.ok(C.CONFIG.CHART_BARS > 0 && C.CONFIG.CHART_BARS <= C.CONFIG.KLINE_DAYS);
+  assert.ok(C.CONFIG.CHART_BARS_LONG >= C.CONFIG.CHART_BARS, '开启长周期均线时应显示更长历史');
+  assert.ok(C.CONFIG.CHART_MIN_BARS > 0 && C.CONFIG.CHART_MIN_BARS <= C.CONFIG.CHART_BARS);
+  assert.ok(C.CONFIG.BAR_MIN_PX > 0);
   assert.ok(C.CONFIG.API_URL.startsWith('https://web.ifzq.gtimg.cn'));
+  const colorKeys = ['bg', 'grid', 'text', 'win', 'loss', 'ma5', 'ma10', 'ma20',
+    'ma60', 'ma120', 'ma250', 'future'];
   ['light', 'dark'].forEach((theme) => {
-    ['bg', 'grid', 'text', 'win', 'loss', 'ma5', 'ma10', 'ma20', 'future']
-      .forEach((key) => assert.ok(C.CONFIG.COLORS[theme][key], `${theme}.${key} 缺失`));
+    colorKeys.forEach((key) => assert.ok(C.CONFIG.COLORS[theme][key], `${theme}.${key} 缺失`));
   });
 });

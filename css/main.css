@@ -145,8 +145,6 @@ body {
 .input-wrapper input:focus-visible { outline: none; box-shadow: var(--focus-ring); }
 .input-wrapper input::placeholder { color: var(--text-secondary); opacity: 0.7; }
 
-.input-hint { font-size: 12px; line-height: 1.45; color: var(--text-secondary); }
-
 .input-actions { display: flex; gap: 8px; flex-shrink: 0; align-self: stretch; align-items: flex-end; }
 
 /* ===== 5. 按钮 ===== */
