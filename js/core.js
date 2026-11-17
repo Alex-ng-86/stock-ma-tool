@@ -249,62 +249,222 @@
     return result;
   }
 
+  /**
+   * 趋势转折价（Inflection Price）：
+   * 要使 MA(n) 在明天转为上行，明天的收盘价必须高于 n-1 天前的价格（即即将被移出窗口的价格）。
+   * 返回各周期对应的“转折价”。
+   */
+  function calcMAInflectionPrices(prices, periods) {
+    var list = (periods && periods.length) ? periods : CONFIG.MA_PERIODS;
+    var result = {};
+    if (!prices || !prices.length) return result;
+    var n = prices.length;
+    for (var i = 0; i < list.length; i++) {
+      var p = list[i];
+      // MA(p) 的转折价是 prices[n - p]，即当前窗口中最老的一根
+      if (n >= p) {
+        var inflectionPrice = prices[n - p];
+        // 计算当前 MA(p) 的趋势（通过最后两个 MA 值对比）
+        var trend = 'flat';
+        if (n > p) {
+          // 当前 MA = sum(prices[n-p...n-1]) / p
+          // 上一 MA = sum(prices[n-p-1...n-2]) / p
+          // 当前 MA > 上一 MA <=> prices[n-1] > prices[n-p-1]
+          var diff = prices[n - 1] - prices[n - p - 1];
+          // 增加微小阈值判定走平
+          if (diff > 0.0001) trend = 'up';
+          else if (diff < -0.0001) trend = 'down';
+        }
+        result['ma' + p] = { price: inflectionPrice, trend: trend };
+      } else {
+        result['ma' + p] = null;
+      }
+    }
+    return result;
+  }
+
+  /**
+   * 识别简单的 K 线形态（Hammer, Shooting Star, Doji 等）
+   * 仅识别最近一根 K 线，返回形态名称或 null
+   */
+  function detectCandlePattern(klines) {
+    if (!klines || klines.length < 1) return null;
+    var k = klines[klines.length - 1];
+    var body = Math.abs(k.close - k.open);
+    var range = k.high - k.low;
+    if (range === 0) return null;
+
+    var upperShadow = k.high - Math.max(k.open, k.close);
+    var lowerShadow = Math.min(k.open, k.close) - k.low;
+
+    // Doji: 实体极小
+    if (body / range < 0.1) return { type: 'doji', label: '十字星' };
+    
+    // Hammer: 下影线长，实体位于上方，上影线极短
+    if (lowerShadow > body * 2 && upperShadow < body * 0.5) return { type: 'hammer', label: '锤头线' };
+    
+    // Shooting Star: 上影线长，实体位于下方，下影线极短
+    if (upperShadow > body * 2 && lowerShadow < body * 0.5) return { type: 'shootingStar', label: '流星线' };
+
+    return null;
+  }
+
+  /**
+   * 计算相对强度（RS）：
+   * 对比个股与指数在过去 N 天的涨幅差值。
+   */
+  function calcRelativeStrength(stockPrices, indexPrices, days) {
+    if (!stockPrices || !indexPrices || stockPrices.length < days || indexPrices.length < days) return null;
+    var stockStart = stockPrices[stockPrices.length - days];
+    var stockEnd = stockPrices[stockPrices.length - 1];
+    var indexStart = indexPrices[indexPrices.length - days];
+    var indexEnd = indexPrices[indexPrices.length - 1];
+    
+    var stockPct = (stockEnd / stockStart - 1) * 100;
+    var indexPct = (indexEnd / indexStart - 1) * 100;
+    return stockPct - indexPct;
+  }
+
   /* ===== 支撑/压力与斐波那契回撤 ===== */
   /**
-   * 计算关键价位：
-   * - 短期压力/支撑：最近 20 根 K 线的最高价/最低价
-   * - 中期压力/支撑：最近 60 根 K 线的最高价/最低价
-   * - 斐波那契：最近 60 根 K 线高低点区间的 0.382 / 0.5 / 0.618 回撤位
-   * 结果按价格从高到低排序，并对差异 < 0.3% 的价位去重。
+   * 优化后的压力/支撑位计算逻辑：
+   * 1. 历史极值：最近 20/60/120/250 日的高低点
+   * 2. 斐波那契回撤：基于 60 日与 250 日波段的 0.236/0.382/0.5/0.618/0.786 位
+   * 3. 成交量密集区：寻找成交量异常放大（>2倍均量）的 K 线高低点
+   * 4. 心理位：附近的整数关口
+   * 5. 强度评估：对上述价位进行聚类去重，并根据重合度计算“强度”得分
    */
   function computeSupportResistance(klines, prices) {
-    var levels = [];
+    var rawLevels = [];
     var n = Math.min((klines || []).length, (prices || []).length);
-    if (n <= 0) return levels;
+    if (n <= 0) return [];
 
-    function extremes(lookback) {
-      var from = Math.max(0, n - lookback);
-      var high = -Infinity, low = Infinity;
+    var lastPrice = prices[n - 1];
+
+    // --- 1. 历史极值 ---
+    [20, 60, 120, 250].forEach(function (days) {
+      var from = Math.max(0, n - days);
+      var h = -Infinity, l = Infinity;
       for (var i = from; i < n; i++) {
-        var k = klines[i];
-        if (!k) continue;
-        if (k.high) high = Math.max(high, k.high);
-        if (k.low) low = Math.min(low, k.low);
+        if (klines[i].high > h) h = klines[i].high;
+        if (klines[i].low < l) l = klines[i].low;
       }
-      return { high: high, low: low };
-    }
+      if (h !== -Infinity) rawLevels.push({ price: h, type: 'resistance', label: days + '日高点', weight: days === 250 ? 3 : 2 });
+      if (l !== Infinity) rawLevels.push({ price: l, type: 'support', label: days + '日低点', weight: days === 250 ? 3 : 2 });
+    });
 
-    var short = extremes(20);
-    if (short.high !== -Infinity) levels.push({ price: short.high, type: 'resistance', label: '短期压力' });
-    if (short.low !== Infinity) levels.push({ price: short.low, type: 'support', label: '短期支撑' });
+    // --- 2. 斐波那契回撤 ---
+    [60, 250].forEach(function (days) {
+      var from = Math.max(0, n - days);
+      var h = -Infinity, l = Infinity;
+      for (var i = from; i < n; i++) {
+        if (klines[i].high > h) h = klines[i].high;
+        if (klines[i].low < l) l = klines[i].low;
+      }
+      if (h > l && h !== -Infinity && l !== Infinity) {
+        var diff = h - l;
+        [0.236, 0.382, 0.5, 0.618, 0.786].forEach(function (r) {
+          rawLevels.push({ price: h - diff * r, type: 'fibonacci', label: '斐波' + (r * 100).toFixed(1) + '%', weight: 1.5 });
+        });
+      }
+    });
 
-    var mid = extremes(60);
-    if (mid.high !== -Infinity) levels.push({ price: mid.high, type: 'resistance', label: '中期压力' });
-    if (mid.low !== Infinity) levels.push({ price: mid.low, type: 'support', label: '中期支撑' });
-
-    if (mid.high !== -Infinity && mid.low !== Infinity && mid.high > mid.low) {
-      var diff = mid.high - mid.low;
-      var ratios = [0.382, 0.5, 0.618];
-      for (var f = 0; f < ratios.length; f++) {
-        var price = mid.high - diff * ratios[f];
-        if (price > mid.low && price < mid.high) {
-          levels.push({ price: price, type: 'fibonacci', label: '斐波那契' });
+    // --- 4. 成交量密集位 (量能异常放大的 K 线高低点) ---
+    if (n > 20) {
+      var volSum = 0;
+      for (var v = n - 20; v < n; v++) volSum += (klines[v].volume || 0);
+      var avgVol = volSum / 20;
+      // 检查最近 60 天内放量超过 2 倍均量的日子
+      var start = Math.max(0, n - 60);
+      for (var j = start; j < n; j++) {
+        if ((klines[j].volume || 0) > avgVol * 2.5) {
+          rawLevels.push({ price: klines[j].high, type: 'resistance', label: '放量高点', weight: 1 });
+          rawLevels.push({ price: klines[j].low, type: 'support', label: '放量低点', weight: 1 });
         }
       }
     }
 
-    var unique = [];
-    for (var j = 0; j < levels.length; j++) {
-      var duplicated = false;
-      for (var u = 0; u < unique.length; u++) {
-        if (Math.abs(levels[j].price - unique[u].price) / levels[j].price < 0.003) {
-          duplicated = true;
+    // --- 5. 心理位 (附近的大型整数关口) ---
+    var step = Math.pow(10, Math.floor(Math.log10(lastPrice)) - 1);
+    if (step > 0) {
+      var roundBase = Math.round(lastPrice / step) * step;
+      [roundBase, roundBase + step, roundBase - step].forEach(function (p) {
+        if (Math.abs(p - lastPrice) / lastPrice < 0.05) {
+          rawLevels.push({ price: p, type: 'psychological', label: '整数关口', weight: 0.5 });
+        }
+      });
+    }
+
+    // --- 6. 聚类、去重与评分 ---
+    // 按价格排序
+    rawLevels.sort(function (a, b) { return a.price - b.price; });
+
+    var clusters = [];
+    var threshold = 0.006; // 0.6% 的聚类阈值
+    for (var k = 0; k < rawLevels.length; k++) {
+      var lv = rawLevels[k];
+      var added = false;
+      for (var c = 0; c < clusters.length; c++) {
+        var center = clusters[c].sumPrice / clusters[c].count;
+        if (Math.abs(lv.price - center) / center < threshold) {
+          clusters[c].items.push(lv);
+          clusters[c].sumPrice += lv.price;
+          clusters[c].count++;
+          clusters[c].totalWeight += lv.weight;
+          added = true;
           break;
         }
       }
-      if (!duplicated) unique.push(levels[j]);
+      if (!added) {
+        clusters.push({
+          items: [lv],
+          sumPrice: lv.price,
+          count: 1,
+          totalWeight: lv.weight
+        });
+      }
     }
-    return unique.sort(function (a, b) { return b.price - a.price; });
+
+    // 从每个聚类中提取最终显示位
+    var finalLevels = clusters.map(function (c) {
+      // 聚类内的代表价：取权重最高的一项，如果权重相同取均值
+      c.items.sort(function (a, b) { return b.weight - a.weight; });
+      var best = c.items[0];
+      var price = c.sumPrice / c.count;
+
+      // 生成标签：如果聚类内有多个重要项，合并标签
+      var labels = [];
+      var seen = {};
+      for (var i = 0; i < c.items.length; i++) {
+        var l = c.items[i].label;
+        if (!seen[l]) {
+          labels.push(l);
+          seen[l] = true;
+          if (labels.length >= 3) break; // 最多显示 3 个标签
+        }
+      }
+
+      var type = price >= lastPrice ? 'resistance' : 'support';
+      // 如果聚类内含斐波那契，类型标记为 fibonacci 以便 UI 绘制颜色
+      if (c.items.some(function(it){ return it.type === 'fibonacci'; })) {
+        type = 'fibonacci';
+      }
+
+      return {
+        price: price,
+        type: type,
+        label: labels.join('+'),
+        weight: c.totalWeight
+      };
+    });
+
+    // 过滤掉权重过低的孤立位（除非距离现价很近）
+    finalLevels = finalLevels.filter(function (lv) {
+      var dist = Math.abs(lv.price - lastPrice) / lastPrice;
+      return lv.weight >= 2 || dist < 0.02;
+    });
+
+    return finalLevels.sort(function (a, b) { return b.price - a.price; });
   }
 
   /**
@@ -332,7 +492,7 @@
    * 均线信号摘要：把均线、价格与关键位压缩成一句可读结论，供界面直接展示。
    * 入参 maArrs 为 buildMAArrays 的结果；数据不足时对应字段返回 null 而不猜测。
    */
-  function buildSignalSummary(maArrs, lastPrice, levels) {
+  function buildSignalSummary(maArrs, lastPrice, levels, klines, prices, indexPrices) {
     var out = {
       arrangement: null,      // bull / bear / mixed
       arrangementText: '均线数据不足',
@@ -340,7 +500,11 @@
       vsMa60: null,
       cross: null,            // { type: 'golden' | 'death', daysAgo: n }
       support: null,          // { price, label, pctDiff }
-      resistance: null
+      resistance: null,
+      pattern: detectCandlePattern(klines),
+      inflections: calcMAInflectionPrices(prices),
+      rs5: calcRelativeStrength(prices, indexPrices, 5),
+      rs20: calcRelativeStrength(prices, indexPrices, 20)
     };
     var price = Number(lastPrice);
     if (!(price > 0)) return out;
@@ -471,6 +635,9 @@
     deriveChangeRange: deriveChangeRange,
     calcMA: calcMA,
     calcProjectedMA: calcProjectedMA,
+    calcMAInflectionPrices: calcMAInflectionPrices,
+    detectCandlePattern: detectCandlePattern,
+    calcRelativeStrength: calcRelativeStrength,
     buildMAArrays: buildMAArrays,
     computeSupportResistance: computeSupportResistance,
     findNearestKeyLevel: findNearestKeyLevel,

@@ -39,6 +39,22 @@
 .status-bar .price-display { color: var(--text-secondary); }
 .status-bar .data-source { font-size: 12px; }
 
+/* ===== 2a. 周期切换按钮 ===== */
+.period-toggle-row {
+  display: flex; gap: 8px; margin-top: 12px;
+}
+.period-toggle-row.hidden { display: none; }
+.period-btn {
+  padding: 4px 12px; font-size: 12px;
+  background: var(--card-bg); color: var(--text);
+  border: 1px solid var(--border); border-radius: 4px;
+  cursor: pointer; transition: all 0.2s;
+}
+.period-btn:hover { background: var(--table-stripe); }
+.period-btn.active {
+  background: var(--primary); color: #fff; border-color: var(--primary);
+}
+
 .status-tag {
   display: inline-block; padding: 2px 8px;
   border-radius: 4px; font-size: 11px; font-weight: 500;
@@ -72,6 +88,8 @@
 .sig-bull { background: rgba(220,38,38,0.10); border-color: rgba(220,38,38,0.35); color: var(--win); font-weight: 600; }
 .sig-bear { background: rgba(21,128,61,0.10); border-color: rgba(21,128,61,0.35); color: var(--danger); font-weight: 600; }
 .sig-neutral { color: var(--text-secondary); }
+.sig-highlight { background: rgba(14,116,144,0.10); border-color: rgba(14,116,144,0.35); color: #0e7490; font-weight: 600; }
+[data-theme="dark"] .sig-highlight { background: rgba(34,211,238,0.15); border-color: rgba(34,211,238,0.40); color: #22d3ee; }
 .sig-pct { margin-left: 4px; font-size: 12px; color: var(--text-secondary); }
 .sig-tip { background: transparent; border-style: dashed; color: var(--text-secondary); font-size: 12px; }
 [data-theme="dark"] .sig-bull { background: rgba(248,113,113,0.15); border-color: rgba(248,113,113,0.40); }
@@ -233,10 +251,16 @@
   margin: 0 0 12px; font-size: 12px; box-shadow: var(--shadow);
 }
 .sr-toggle-title { color: var(--text-secondary); font-weight: 500; }
-/* 移入图表卡片后：不再自成一张卡，改为标题与画布之间的分隔条 */
-.chart-card .sr-toggle-bar-inline {
-  margin: 0; border: 0; border-radius: 0; box-shadow: none;
+/* 移入图表卡片后：置于画布上方，作为功能控制区 */
+.chart-canvas-wrap .sr-toggle-bar-inline,
+.chart-canvas-wrap .period-toggle-row {
+  margin: 0 -12px; border: 0; border-radius: 0; box-shadow: none;
+  padding: 8px 16px;
   background: transparent; border-bottom: 1px solid var(--border);
+}
+.chart-canvas-wrap .period-toggle-row {
+  margin-top: 0;
+  margin-bottom: 8px; /* 与画布保持一点间距 */
 }
 .sr-toggle-item {
   display: flex; align-items: center; gap: 4px; cursor: pointer;
@@ -255,7 +279,9 @@
 .sr-dot-fib { background: var(--fib); }
 /* 与 js/core.js 中 ma60 色值保持一致，便于对照图例 */
 .sr-dot-longma { background: #be185d; }
+.sr-dot-anomaly { background: #0e7490; }
 [data-theme="dark"] .sr-dot-longma { background: #f472b6; }
+[data-theme="dark"] .sr-dot-anomaly { background: #22d3ee; }
 
 /* ===== 9. 空状态 ===== */
 .empty-state {

@@ -92,6 +92,17 @@
         <input type="checkbox" id="toggleLongMA">
         <label for="toggleLongMA"><span class="sr-dot sr-dot-longma" aria-hidden="true"></span>长周期均线</label>
       </div>
+      <div class="sr-toggle-item">
+        <input type="checkbox" id="toggleAnomaly" checked>
+        <label for="toggleAnomaly"><span class="sr-dot sr-dot-anomaly" aria-hidden="true"></span>异动标注</label>
+      </div>
+    </div>
+    <!-- 周期切换按钮组：首次渲染图表时会被移入图表卡片 -->
+    <div class="period-toggle-row hidden" id="periodToolbar" role="group" aria-label="K线周期">
+      <span class="sr-toggle-title">周期:</span>
+      <button class="period-btn active" data-period="day">日K</button>
+      <button class="period-btn" data-period="week">周K</button>
+      <button class="period-btn" data-period="m60">60分钟</button>
     </div>
     <!-- K线图容器 -->
     <div id="chartArea"></div>
@@ -157,9 +168,12 @@
     rows: [],                       // 推演数据（表格与复制文本共用）
     selectedPct: null,              // 当前选中的涨跌幅
     changeStep: 1,                  // 推演档位步长（1% 或 5%）
+    period: 'day',                  // 当前周期：day / week / 60
+    userZoomBars: null,             // 用户手动缩放的根数
     showSupport: true,              // 标注层：支撑/压力
     showFibonacci: true,            // 标注层：斐波那契
-    showLongMA: false               // 标注层：长周期均线（MA120/MA250）
+    showLongMA: false,              // 标注层：长周期均线（MA120/MA250）
+    showAnomaly: true               // 标注层：异动标注（量能/形态）
   };
 
   var lastResultText = '';
@@ -192,10 +206,13 @@
   var loadingOverlay = document.getElementById('loadingOverlay');
   var errorToast = document.getElementById('errorToast');
   var autocompleteList = document.getElementById('autocompleteList');
+  var periodToolbar = document.getElementById('periodToolbar');
+  var periodBtns = document.querySelectorAll('.period-btn');
   var srToggleBar = document.getElementById('srToggleBar');
   var toggleSupResEl = document.getElementById('toggleSupRes');
   var toggleFibEl = document.getElementById('toggleFib');
   var toggleLongMAEl = document.getElementById('toggleLongMA');
+  var toggleAnomalyEl = document.getElementById('toggleAnomaly');
   var tableToolbar = document.getElementById('tableToolbar');
   var step1El = document.getElementById('step1');
   var step5El = document.getElementById('step5');
@@ -344,43 +361,46 @@
   /* =========================================================
    * 5. 数据访问：超时 / 取消 / 去重 / 缓存
    * ========================================================= */
-  function fetchTencentData(code, market, signal) {
+  function fetchTencentData(code, market, period, signal) {
     var ticker = market + code;
-    var url = CONFIG.API_URL + '?param=' + ticker + ',day,,,' + CONFIG.KLINE_DAYS + ',qfq';
+    var pKey = (typeof period === 'string') ? period : 'day';
+    var isMinute = pKey.indexOf('m') === 0;
+    
+    // 统一使用已验证支持 CORS 的 fqkline/get 接口
+    var baseUrl = CONFIG.API_URL;
+    
+    // 构建请求参数：分钟线通常不需要 qfq（前复权）标记
+    // 修正：分钟线接口请求根数通常建议设为 640（约 16 个交易日）以获得足够计算均线的历史长度
+    var count = isMinute ? 640 : CONFIG.KLINE_DAYS;
+    var param = ticker + ',' + pKey + ',,,' + count + ',qfq';
+    var url = baseUrl + '?param=' + param;
+
     return fetch(url, { signal: signal })
       .then(function (r) {
-        if (!r.ok) throw new Error('腾讯接口 ' + r.status);
+        if (!r.ok) throw new Error('接口响应异常 ' + r.status);
         return r.json();
       })
       .then(function (data) {
-        var kd = data && data.data && data.data[ticker];
-        if (!kd) throw new Error('腾讯接口无此股票数据');
+        // 健壮性：优先按 ticker 查找，否则取 data 根节点下的第一个有效对象
+        var kd = data && data.data && (data.data[ticker] || Object.values(data.data)[0]);
+        if (!kd) throw new Error('腾讯接口未返回该股票数据');
 
-        // qt 为对象：qt[ticker][1] 为名称，[3] 为最新价，[4] 为昨收，[30] 为行情时间
-        var qt = kd.qt;
-        if (!qt) throw new Error('腾讯接口 quote 数据不完整');
-        var inner = qt[ticker];
-        if (!inner || !Array.isArray(inner)) throw new Error('腾讯接口 quote 数据格式错误');
-        var name = inner[1] || ('股票' + code);
-        var price = parseFloat(inner[3]) || 0;
-        if (!price) throw new Error('腾讯接口解析不到价格');
-        var prevClose = parseFloat(inner[4]) || 0;
-        // 实测：仅 A 股的 [47]/[48] 是涨跌停价；港股这两位是无关数值，必须排除
-        var limitUp = market === 'hk' ? null : (parseFloat(inner[47]) || null);
-        var limitDown = market === 'hk' ? null : (parseFloat(inner[48]) || null);
-        var quoteTime = inner[30] || '';
+        // 健壮性：解析 K 线数据，支持多种周期对应的 Key
+        // 修正：增加对分钟线 Key 的显式支持，有些标的返回的是 ticker 对应的 key
+        var days = kd['qfq' + pKey] || kd[pKey] || kd[ticker] || kd.qfqday || kd.day || [];
+        
+        // 如果还是没找到且是分钟线，尝试在根 data 下找
+        if ((!days || days.length === 0) && isMinute) {
+            var alt = data.data[ticker] && data.data[ticker][pKey];
+            if (alt) days = alt;
+        }
+        if (!Array.isArray(days) || days.length === 0) throw new Error('接口未返回 K 线历史数据');
 
-        var days = kd.qfqday || kd.day || [];
-        if (!Array.isArray(days) || days.length === 0) throw new Error('腾讯 kline 无日线数据');
-
-        // 行格式：[日期, 开盘, 收盘, 最高, 最低, 成交量]
-        // 关键：价格无效时同时跳过价格与 K 线，保证两个数组严格等长、下标对齐
         var prices = [];
         var klines = [];
         for (var i = 0; i < days.length; i++) {
           var row = days[i];
           if (!row || !Array.isArray(row) || row.length < 3) continue;
-          if (typeof row[2] === 'object') continue;
           var close = parseFloat(row[2]);
           if (isNaN(close)) continue;
           prices.push(close);
@@ -389,10 +409,22 @@
             open: parseFloat(row[1]) || close,
             close: close,
             high: parseFloat(row[3]) || close,
-            low: parseFloat(row[4]) || close
+            low: parseFloat(row[4]) || close,
+            volume: parseFloat(row[5]) || 0
           });
         }
-        if (prices.length === 0) throw new Error('腾讯 kline 解析不到收盘价');
+        if (prices.length === 0) throw new Error('解析不到有效的价格序列');
+
+        // 健壮性：解析实时报价（qt），若缺失则从最后一条 K 线推导
+        var qt = kd.qt || {};
+        var inner = qt[ticker] || Object.values(qt)[0] || [];
+        
+        var name = inner[1] || kd.name || ('股票' + code);
+        var price = parseFloat(inner[3]) || prices[prices.length - 1];
+        var prevClose = parseFloat(inner[4]) || (prices.length >= 2 ? prices[prices.length - 2] : price);
+        var limitUp = market === 'hk' ? null : (parseFloat(inner[47]) || null);
+        var limitDown = market === 'hk' ? null : (parseFloat(inner[48]) || null);
+        var quoteTime = inner[30] || '';
 
         return {
           name: name, price: price, prevClose: prevClose,
@@ -402,21 +434,24 @@
       });
   }
 
-  // 单次网络请求：8 秒超时（AbortController），新查询会取消旧查询
-  function requestData(code, market) {
-    if (currentAbort) {
-      currentAbort.cancelled = true;
-      currentAbort.controller.abort();
-    }
-    var rec = { controller: new AbortController(), timedOut: false, cancelled: false };
-    currentAbort = rec;
+  // 单次网络请求：8 秒超时（AbortController），支持外部信号中止
+  function requestData(code, market, period, externalSignal) {
+    var controller = new AbortController();
+    var signal = controller.signal;
 
+    // 联动外部中止信号
+    if (externalSignal) {
+      if (externalSignal.aborted) controller.abort();
+      externalSignal.addEventListener('abort', function () { controller.abort(); });
+    }
+
+    var rec = { timedOut: false };
     var timer = setTimeout(function () {
       rec.timedOut = true;
-      rec.controller.abort();                          // 真正中止网络请求，避免悬挂
+      controller.abort();
     }, CONFIG.REQUEST_TIMEOUT_MS);
 
-    return fetchTencentData(code, market, rec.controller.signal)
+    return fetchTencentData(code, market, period, signal)
       .then(function (result) {
         clearTimeout(timer);
         return result;
@@ -424,7 +459,7 @@
       .catch(function (err) {
         clearTimeout(timer);
         if (rec.timedOut) throw new Error('数据请求超时，请检查网络连接后重试');
-        if (rec.cancelled || (err && err.name === 'AbortError')) {
+        if (err && err.name === 'AbortError') {
           var cancelled = new Error('查询已取消');
           cancelled.cancelled = true;
           throw cancelled;
@@ -433,9 +468,10 @@
       });
   }
 
-  // 统一出口：相同代码进行中请求去重 + 短期结果缓存，避免重复请求
-  function fetchAllData(code, market) {
-    var key = market + code;
+  // 统一出口：相同代码进行中请求去重 + 短期结果缓存，支持外部信号中止
+  function fetchAllData(code, market, period, externalSignal) {
+    var p = period || 'day';
+    var key = market + code + '_' + p;
 
     if (inflight && inflight.key === key) return inflight.promise;
 
@@ -444,9 +480,27 @@
       return Promise.resolve(cached.data);
     }
 
-    var promise = requestData(code, market).then(function (data) {
-      resultCache[key] = { time: Date.now(), data: data };
-      return data;
+    // 获取大盘指数作为对比
+    var indexTicker = '';
+    if (market === 'sh') indexTicker = 'sh000001';
+    else if (market === 'sz') indexTicker = 'sz399001';
+    else if (market === 'hk') indexTicker = 'hkHSI';
+
+    var promise = requestData(code, market, p, externalSignal).then(function (stockData) {
+      if (indexTicker && p === 'day') {
+        return requestData(indexTicker.substring(2), indexTicker.substring(0, 2), p, externalSignal)
+          .then(function (indexData) {
+            stockData.indexData = indexData;
+            resultCache[key] = { time: Date.now(), data: stockData };
+            return stockData;
+          })
+          .catch(function () {
+            resultCache[key] = { time: Date.now(), data: stockData };
+            return stockData;
+          });
+      }
+      resultCache[key] = { time: Date.now(), data: stockData };
+      return stockData;
     });
     inflight = { key: key, promise: promise };
     var release = function () { if (inflight && inflight.promise === promise) inflight = null; };
@@ -491,8 +545,10 @@
     wrap.appendChild(canvas);
 
     card.appendChild(title);
-    // 标注层开关跟随图表标题显示（首次创建卡片时把它从结果区移入卡片，位于标题与画布之间）
-    if (srToggleBar) card.appendChild(srToggleBar);
+    // 周期按钮与标注层开关跟随图表显示，置于画布上方（标注层在前，周期切换在后）
+    if (srToggleBar) wrap.appendChild(srToggleBar);
+    if (periodToolbar) wrap.appendChild(periodToolbar);
+    wrap.appendChild(canvas);
     card.appendChild(wrap);
     container.appendChild(card);
 
@@ -504,6 +560,7 @@
     canvas.addEventListener('touchstart', onCanvasPointerMove, { passive: true });
     canvas.addEventListener('touchmove', onCanvasPointerMove, { passive: true });
     canvas.addEventListener('touchend', function () { setHoverIndex(null); });
+    canvas.addEventListener('wheel', onCanvasWheel, { passive: false });
 
     function toggleCollapse() {
       var show = !wrap.classList.contains('show');
@@ -560,6 +617,21 @@
     if (idx < 0) idx = 0;
     if (idx > m.len - 1) idx = m.len - 1;
     setHoverIndex(m.len ? idx : null);
+  }
+
+  function onCanvasWheel(e) {
+    e.preventDefault();
+    if (!chart.opts) return;
+    
+    var delta = e.deltaY > 0 ? 1 : -1;
+    var currentBars = state.userZoomBars || chart.metrics.len;
+    var nextBars = currentBars + delta * Math.ceil(currentBars * 0.1);
+    
+    // 限制缩放范围：最小 20 根，最大不超过历史总根数
+    var maxAllowed = chart.opts.klines.length;
+    state.userZoomBars = Math.min(maxAllowed, Math.max(20, nextBars));
+    
+    scheduleChartPaint();
   }
 
   // 十字线与悬浮信息框（仅真实 K 线区间内有效）
@@ -690,11 +762,13 @@
     var chartW = W - padL - padR;
     var chartH = H - padT - padB;
 
-    // 只绘制最近若干根 K 线：根数过多时每根被压到 1-2px，反而看不出形态。
     // 均线与推演仍使用完整历史（o.klines 全量），此处仅裁剪「显示窗口」。
-    var maxBars = state.showLongMA ? CONFIG.CHART_BARS_LONG : CONFIG.CHART_BARS;
-    var byWidth = Math.floor(chartW / CONFIG.BAR_MIN_PX);          // 按画布宽度自适应，避免窄屏过密
-    var bars = Math.min(maxBars, Math.max(CONFIG.CHART_MIN_BARS, byWidth));
+    var bars = state.userZoomBars;
+    if (!bars) {
+      var maxBars = state.showLongMA ? CONFIG.CHART_BARS_LONG : CONFIG.CHART_BARS;
+      var byWidth = Math.floor(chartW / CONFIG.BAR_MIN_PX);          // 按画布宽度自适应，避免窄屏过密
+      bars = Math.min(maxBars, Math.max(CONFIG.CHART_MIN_BARS, byWidth));
+    }
     var offset = Math.max(0, o.klines.length - bars);
     function tail(arr) { return arr ? arr.slice(offset) : null; }
     var view = {
@@ -879,6 +953,15 @@
 
     // K 线
     var barW = Math.max(2, Math.min(12, chartW / totalPts * 0.6));
+    
+    // 计算平均成交量用于异动标注
+    var avgVol = 0;
+    if (state.showAnomaly) {
+      var vSum = 0;
+      for (i = 0; i < view.klines.length; i++) vSum += (view.klines[i].volume || 0);
+      avgVol = vSum / (view.klines.length || 1);
+    }
+
     for (i = 0; i < view.klines.length; i++) {
       var item = view.klines[i];
       var color = item.close >= item.open ? winColor : lossColor;
@@ -894,6 +977,24 @@
       var yClose = yPos(item.close);
       ctx.fillStyle = color;
       ctx.fillRect(xPos(i) - barW / 2, Math.min(yOpen, yClose), barW, Math.max(Math.abs(yOpen - yClose), 1));
+      
+      // 绘制异动标注（放量 > 2.5倍均量 或 特定形态）
+      if (state.showAnomaly) {
+        if (item.volume > avgVol * 2.5) {
+          ctx.fillStyle = pal.ma5;
+          ctx.font = 'bold 9px sans-serif';
+          ctx.textAlign = 'center';
+          ctx.fillText('量', xPos(i), yPos(item.high) - 5);
+        }
+        // 识别单根 K 线形态
+        var pat = C.detectCandlePattern([item]);
+        if (pat && pat.type !== 'doji') { // 仅标注较显著的形态
+          ctx.fillStyle = pal.ma20;
+          ctx.font = 'bold 9px sans-serif';
+          ctx.textAlign = 'center';
+          ctx.fillText(pat.label.charAt(0), xPos(i), yPos(item.low) + 12);
+        }
+      }
     }
 
     // 预测 K 线（虚线 + 半透明）
@@ -1055,9 +1156,15 @@
     state.rows = rows;
     state.selectedPct = null;                             // 重建后清空选中态，避免残留高亮
 
-    var baseNote = state.marketStatus === 'intraday'
-      ? '盘中推演（以昨收 ' + D(state.basePrice, digits) + ' 为基准'
-      : '明日推演（以今收 ' + D(state.basePrice, digits) + ' 为基准';
+    var periodMap = { 'day': '日', 'week': '周', 'm60': '60分钟' };
+    var periodLabel = periodMap[state.period] || '日';
+    
+    var timeNote = '';
+    if (state.period === 'day') timeNote = (state.marketStatus === 'intraday' ? '盘中' : '明日');
+    else if (state.period === 'week') timeNote = (state.marketStatus === 'intraday' ? '本周' : '下周');
+    else timeNote = '下一周期';
+
+    var baseNote = timeNote + '推演（以当前' + periodLabel + '线基准价 ' + D(state.basePrice, digits) + ' 为基准';
     var title = state.name + '(' + state.code + ') - ' + baseNote + '，每 ' + state.changeStep + '% 一档）';
 
     tablesWrapper.innerHTML = renderChangeTable(title, rows, digits, range);
@@ -1146,6 +1253,19 @@
       items.push('<span class="sig-item">' + when
         + '<strong class="' + (s.cross.type === 'golden' ? 'price-win' : 'price-loss') + '">'
         + (s.cross.type === 'golden' ? '金叉' : '死叉') + '</strong>（MA5/MA10）</span>');
+    }
+    if (s.pattern) {
+      items.push('<span class="sig-item sig-highlight">形态: <strong>' + C.escapeHtml(s.pattern.label) + '</strong></span>');
+    }
+    if (s.inflections && s.inflections.ma5) {
+      var inf = s.inflections.ma5;
+      var tip = inf.trend === 'up' ? '当前 MA5 上行，收盘价高于此值可维持涨势' : '当前 MA5 下行，收盘价高于此值可扭转跌势';
+      var cls = inf.trend === 'up' ? 'sig-bull' : (inf.trend === 'down' ? 'sig-bear' : '');
+      items.push('<span class="sig-item ' + cls + '" title="' + tip + '">MA5 走平价 ' + D(inf.price, digits) + '</span>');
+    }
+    if (s.rs5 != null) {
+      var rsCls = s.rs5 > 0 ? 'price-win' : 'price-loss';
+      items.push('<span class="sig-item">5日强弱 <strong class="' + rsCls + '">' + (s.rs5 > 0 ? '+' : '') + s.rs5.toFixed(2) + '%</strong></span>');
     }
     if (s.resistance) {
       items.push('<span class="sig-item">上方压力 ' + C.escapeHtml(s.resistance.label) + ' '
@@ -1289,7 +1409,8 @@
     var marketStatus = C.resolveMarketStatus(market, data.quoteTime);
 
     // 盘中以昨日收盘为基准推演次日，已收盘以今日收盘为基准
-    var basePrice = marketStatus === 'intraday'
+    // 仅当日K周期且盘中时使用昨收，其余周期（周K/60min）或已收盘统一使用最新价
+    var basePrice = (state.period === 'day' && marketStatus === 'intraday')
       ? (prevClose || (prices.length >= 2 ? prices[prices.length - 2] : lastPrice))
       : lastPrice;
 
@@ -1324,7 +1445,7 @@
     state.ma = maArrs;
     state.maPeriods = CONFIG.MA_PERIODS;
     state.baseMAs = baseMAs;
-    state.signal = C.buildSignalSummary(maArrs, lastPrice, levels);
+    state.signal = C.buildSignalSummary(maArrs, lastPrice, levels, alignedKlines, historyPrices, data.indexData ? data.indexData.prices : null);
     state.range = range;
     state.fallbackLimit = fallbackLimit;
     state.selectedPct = null;                             // 重置选中态，避免沿用上一只股票的高亮
@@ -1357,7 +1478,8 @@
     lastResultText = generateCopyText();
   }
 
-  function doQuery() {
+  function doQuery(period) {
+    var p = (typeof period === 'string') ? period : state.period;
     var code = C.validateCode(stockInput.value);
     if (!code) {
       showError('请输入有效的股票代码：A股 6 位数字，港股 5 位数字');
@@ -1371,20 +1493,36 @@
       return;
     }
 
+    state.period = p;
+    // 更新 UI 按钮状态
+    for (var i = 0; i < periodBtns.length; i++) {
+      periodBtns[i].classList.toggle('active', periodBtns[i].dataset.period === p);
+    }
+
     hideError();
     hideAutocomplete();
+
+    // 取消上一次未完成的查询流程
+    if (currentAbort) {
+      currentAbort.cancelled = true;
+      currentAbort.controller.abort();
+    }
+    var rec = { controller: new AbortController(), cancelled: false };
+    currentAbort = rec;
 
     var seq = ++querySeq;
     showLoading(true);
     emptyState.classList.add('hidden');
     statusBar.classList.add('hidden');
     resultSection.classList.remove('show');
+    periodToolbar.classList.add('hidden');
     lastResultText = '';
 
-    fetchAllData(code, market)
+    fetchAllData(code, market, p, rec.controller.signal)
       .then(function (data) {
         if (seq !== querySeq) return;                     // 已有更新的查询，丢弃过期响应
         renderResult(code, market, data);
+        periodToolbar.classList.remove('hidden');
       })
       .catch(function (err) {
         if (seq !== querySeq || (err && err.cancelled)) return;
@@ -1403,6 +1541,13 @@
   // 暴露给外部自动化测试使用
   window._doQueryInline = doQuery;
 
+  for (var i = 0; i < periodBtns.length; i++) {
+    periodBtns[i].addEventListener('click', function () {
+      if (this.classList.contains('active')) return;
+      doQuery(this.dataset.period);
+    });
+  }
+
   clearBtn.addEventListener('click', function () {
     if (currentAbort) {
       currentAbort.cancelled = true;
@@ -1414,11 +1559,18 @@
     tableToolbar.classList.add('hidden');
     statusBar.classList.add('hidden');
     signalCard.classList.add('hidden');           // 一起隐藏信号卡，避免残留上一只股票结论
+    periodToolbar.classList.add('hidden');
     emptyState.classList.remove('hidden');
     hideError();
     hideAutocomplete();
     lastResultText = '';
     state.selectedPct = null;
+    state.userZoomBars = null;
+    state.period = 'day';
+    // 重置周期按钮状态
+    for (var i = 0; i < periodBtns.length; i++) {
+      periodBtns[i].classList.toggle('active', periodBtns[i].dataset.period === 'day');
+    }
     chart.opts = null;
     chart.metrics = null;
     chart.hoverIndex = null;
@@ -1519,6 +1671,12 @@
   if (toggleLongMAEl) {
     toggleLongMAEl.addEventListener('change', function () {
       state.showLongMA = this.checked;
+      scheduleChartPaint();
+    });
+  }
+  if (toggleAnomalyEl) {
+    toggleAnomalyEl.addEventListener('change', function () {
+      state.showAnomaly = this.checked;
       scheduleChartPaint();
     });
   }

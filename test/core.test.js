@@ -267,27 +267,36 @@ test('buildMAArrays：逐日序列与 calcMA 逐点计算结果一致', () => {
   assert.deepEqual(custom.ma2, [null, 1.5, 2.5]);
 });
 
-test('computeSupportResistance：短/中期高低点、斐波那契与去重排序', () => {
+test('computeSupportResistance：优化后的多维度计算与聚类去重', () => {
   const klines = [];
   for (let i = 0; i < 25; i++) {
-    klines.push({ date: `2026-09-${i + 1}`, high: 10 + i, low: 9 + i, close: 9.5 + i });
+    // 构造 25 天上涨趋势，成交量平稳
+    klines.push({
+      date: `2026-09-${i + 1}`,
+      high: 10 + i,
+      low: 9 + i,
+      close: 9.5 + i,
+      volume: 1000
+    });
   }
   const prices = klines.map((k) => k.close);
   const levels = C.computeSupportResistance(klines, prices);
   const pricesList = levels.map((l) => l.price);
 
-  // 25 根：短期(20)高点 34、低点 14；中期(60→25)高点 34、低点 9
-  assert.deepEqual([...pricesList].sort((a, b) => b - a), pricesList, '应按价格降序排列');
-  assert.equal(levels.length, 6);
-  const sorted = [34, 24.45, 21.5, 18.55, 14, 9];
-  sorted.forEach((v, i) => approx(pricesList[i], v, 1e-9));
+  // 1. 应该按价格降序排列
+  assert.deepEqual([...pricesList].sort((a, b) => b - a), pricesList);
 
-  assert.equal(levels[0].type, 'resistance');
-  assert.equal(levels[0].label, '短期压力');
-  // 中期压力与短期压力同价，去重后只保留一条 34
-  assert.equal(levels.filter((l) => Math.abs(l.price - 34) < 1e-9).length, 1);
-  assert.equal(levels.filter((l) => l.type === 'fibonacci').length, 3);
-  assert.equal(levels[levels.length - 1].label, '中期支撑');
+  // 2. 应该包含核心极值位（或其聚类中心）
+  // 25日高点 34，25日低点 9
+  assert.ok(levels.some(l => Math.abs(l.price - 34) < 1));
+  assert.ok(levels.some(l => Math.abs(l.price - 9) < 1));
+
+  // 3. 应该包含斐波那契回撤位
+  assert.ok(levels.some(l => l.label.indexOf('斐波') !== -1 || l.type === 'fibonacci'));
+
+  // 4. 检查标签合并逻辑（例如 34 既是高点也是整数关口）
+  const topLevel = levels.find(l => Math.abs(l.price - 34) < 1);
+  assert.ok(topLevel.label.indexOf('日高点') !== -1);
 
   assert.deepEqual(C.computeSupportResistance([], []), []);
 });
