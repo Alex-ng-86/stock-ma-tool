@@ -157,6 +157,49 @@
     return detectMarketStatus(market, now);
   }
 
+  /* ===== 行情数据解析 ===== */
+  /**
+   * 把接口返回的 K 线行数组解析为 { prices, klines }。
+   * 每行格式为 [日期, 开, 收, 高, 低, 量]，腾讯与东方财富的下标一致，
+   * 因此两种数据源共用同一份解析逻辑。字段缺失的行被跳过；全部无效时抛错，
+   * 避免上层拿到空序列继续计算。
+   */
+  function parseKlineRows(rows) {
+    if (!Array.isArray(rows)) throw new Error('K 线数据格式异常');
+    var prices = [];
+    var klines = [];
+    for (var i = 0; i < rows.length; i++) {
+      var row = rows[i];
+      if (!row || !Array.isArray(row) || row.length < 3) continue;
+      var close = parseFloat(row[2]);
+      if (isNaN(close)) continue;
+      prices.push(close);
+      klines.push({
+        date: row[0],
+        open: parseFloat(row[1]) || close,
+        close: close,
+        high: parseFloat(row[3]) || close,
+        low: parseFloat(row[4]) || close,
+        volume: parseFloat(row[5]) || 0
+      });
+    }
+    if (prices.length === 0) throw new Error('解析不到有效的价格序列');
+    return { prices: prices, klines: klines };
+  }
+
+  /**
+   * 图表 X 轴日期标签：
+   * - 分钟线时间戳 'YYYYMMDDHHmm' → 'MM-DD HH:mm'
+   * - 日/周线 'YYYY-MM-DD' 或东方财富 'YYYY-MM-DD HH:mm' → 去掉前 5 位得 'MM-DD[ HH:mm]'
+   */
+  function formatAxisDate(rawDate) {
+    var s = String(rawDate == null ? '' : rawDate);
+    if (/^\d{12}$/.test(s)) {
+      return s.substr(4, 2) + '-' + s.substr(6, 2) + ' ' + s.substr(8, 2) + ':' + s.substr(10, 2);
+    }
+    return s.length > 5 ? s.substr(5) : s;
+  }
+
   // 涨跌幅档位，如 limit=10 → [-10, -9, ..., 0, ..., 10]
   function getChangeList(limit, step) {
     var n = Math.abs(Number(limit) || 0);
@@ -331,12 +374,11 @@
 
   /* ===== 支撑/压力与斐波那契回撤 ===== */
   /**
-   * 优化后的压力/支撑位计算逻辑：
+   * 压力/支撑位计算逻辑：
    * 1. 历史极值：最近 20/60/120/250 日的高低点
    * 2. 斐波那契回撤：基于 60 日与 250 日波段的 0.236/0.382/0.5/0.618/0.786 位
    * 3. 成交量密集区：寻找成交量异常放大（>2倍均量）的 K 线高低点
-   * 4. 心理位：附近的整数关口
-   * 5. 强度评估：对上述价位进行聚类去重，并根据重合度计算“强度”得分
+   * 4. 强度评估：对上述价位进行聚类去重，并根据重合度计算“强度”得分
    */
   function computeSupportResistance(klines, prices) {
     var rawLevels = [];
@@ -345,35 +387,36 @@
 
     var lastPrice = prices[n - 1];
 
-    // --- 1. 历史极值 ---
-    [20, 60, 120, 250].forEach(function (days) {
-      var from = Math.max(0, n - days);
+    // 最近 days 根 K 线的最高/最低价（不足 days 根时使用全部可用数据）
+    function extremeOf(days) {
       var h = -Infinity, l = Infinity;
-      for (var i = from; i < n; i++) {
+      for (var i = Math.max(0, n - days); i < n; i++) {
         if (klines[i].high > h) h = klines[i].high;
         if (klines[i].low < l) l = klines[i].low;
       }
-      if (h !== -Infinity) rawLevels.push({ price: h, type: 'resistance', label: days + '日高点', weight: days === 250 ? 3 : 2 });
-      if (l !== Infinity) rawLevels.push({ price: l, type: 'support', label: days + '日低点', weight: days === 250 ? 3 : 2 });
+      return { high: h, low: l };
+    }
+
+    // --- 1. 历史极值 ---
+    [20, 60, 120, 250].forEach(function (days) {
+      var ex = extremeOf(days);
+      var weight = days === 250 ? 3 : 2;
+      if (ex.high !== -Infinity) rawLevels.push({ price: ex.high, type: 'resistance', label: days + '日高点', weight: weight });
+      if (ex.low !== Infinity) rawLevels.push({ price: ex.low, type: 'support', label: days + '日低点', weight: weight });
     });
 
     // --- 2. 斐波那契回撤 ---
     [60, 250].forEach(function (days) {
-      var from = Math.max(0, n - days);
-      var h = -Infinity, l = Infinity;
-      for (var i = from; i < n; i++) {
-        if (klines[i].high > h) h = klines[i].high;
-        if (klines[i].low < l) l = klines[i].low;
-      }
-      if (h > l && h !== -Infinity && l !== Infinity) {
-        var diff = h - l;
+      var ex = extremeOf(days);
+      if (ex.high > ex.low && ex.high !== -Infinity && ex.low !== Infinity) {
+        var diff = ex.high - ex.low;
         [0.236, 0.382, 0.5, 0.618, 0.786].forEach(function (r) {
-          rawLevels.push({ price: h - diff * r, type: 'fibonacci', label: '斐波' + (r * 100).toFixed(1) + '%', weight: 1.5 });
+          rawLevels.push({ price: ex.high - diff * r, type: 'fibonacci', label: '斐波' + (r * 100).toFixed(1) + '%', weight: 1.5 });
         });
       }
     });
 
-    // --- 4. 成交量密集位 (量能异常放大的 K 线高低点) ---
+    // --- 3. 成交量密集位 (量能异常放大的 K 线高低点) ---
     if (n > 20) {
       var volSum = 0;
       for (var v = n - 20; v < n; v++) volSum += (klines[v].volume || 0);
@@ -388,18 +431,7 @@
       }
     }
 
-    // --- 5. 心理位 (附近的大型整数关口) ---
-    var step = Math.pow(10, Math.floor(Math.log10(lastPrice)) - 1);
-    if (step > 0) {
-      var roundBase = Math.round(lastPrice / step) * step;
-      [roundBase, roundBase + step, roundBase - step].forEach(function (p) {
-        if (Math.abs(p - lastPrice) / lastPrice < 0.05) {
-          rawLevels.push({ price: p, type: 'psychological', label: '整数关口', weight: 0.5 });
-        }
-      });
-    }
-
-    // --- 6. 聚类、去重与评分 ---
+    // --- 4. 聚类、去重与评分 ---
     // 按价格排序
     rawLevels.sort(function (a, b) { return a.price - b.price; });
 
@@ -507,8 +539,7 @@
       resistance: null,
       pattern: detectCandlePattern(klines),
       inflections: calcMAInflectionPrices(prices),
-      rs5: calcRelativeStrength(prices, indexPrices, 5),
-      rs20: calcRelativeStrength(prices, indexPrices, 20)
+      rs5: calcRelativeStrength(prices, indexPrices, 5)
     };
     var price = Number(lastPrice);
     if (!(price > 0)) return out;
@@ -634,6 +665,8 @@
     detectMarketStatus: detectMarketStatus,
     parseQuoteTime: parseQuoteTime,
     resolveMarketStatus: resolveMarketStatus,
+    parseKlineRows: parseKlineRows,
+    formatAxisDate: formatAxisDate,
     getChangeList: getChangeList,
     buildChangeList: buildChangeList,
     deriveChangeRange: deriveChangeRange,

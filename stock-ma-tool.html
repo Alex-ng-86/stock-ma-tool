@@ -146,20 +146,15 @@
   var state = {
     history: [],                    // 本地查询历史
     code: '', name: '',             // 当前股票
-    market: null,                   // sh / sz / hk
     marketStatus: 'closed',         // intraday / closed
     sourceName: '',                 // 数据源名称
     prices: [],                     // 参与计算的历史收盘价（最近 N 个交易日）
-    klines: [],                     // 与 prices 严格等长的 OHLC 数据
     lastPrice: 0,                   // 最新价
-    prevClose: 0,                   // 昨收（用于反推涨跌停幅度）
     limitUp: null,                  // 涨停价（仅 A 股有效）
     limitDown: null,                // 跌停价
-    quoteTime: '',                  // 行情时间原始值（市场状态判定依据）
     basePrice: 0,                   // 推演基准价（盘中为昨收，收盘为今收）
     digits: 2,                      // 价格显示精度
     levels: [],                     // 支撑/压力/斐波那契关键位
-    ma: {},                         // 各周期逐日均线序列
     baseMAs: {},                    // 各周期最新均线值
     maPeriods: [],                  // 当前使用的均线周期（含长周期）
     signal: null,                   // 信号摘要
@@ -168,7 +163,7 @@
     rows: [],                       // 推演数据（表格与复制文本共用）
     selectedPct: null,              // 当前选中的涨跌幅
     changeStep: 1,                  // 推演档位步长（1% 或 5%）
-    period: 'day',                  // 当前周期：day / week / 60
+    period: 'day',                  // 当前周期：day / week / m60
     userZoomBars: null,             // 用户手动缩放的根数
     showSupport: true,              // 标注层：支撑/压力
     showFibonacci: true,            // 标注层：斐波那契
@@ -380,26 +375,13 @@
         if (!d || !Array.isArray(d.klines) || d.klines.length === 0) {
           throw new Error('东方财富接口未返回该股票数据');
         }
-        var prices = [];
-        var klines = [];
-        for (var i = 0; i < d.klines.length; i++) {
-          var parts = String(d.klines[i]).split(',');
-          if (parts.length < 6) continue;
-          var close = parseFloat(parts[2]);
-          if (isNaN(close)) continue;
-          prices.push(close);
-          klines.push({
-            date: parts[0],                        // 'YYYY-MM-DD HH:mm'
-            open: parseFloat(parts[1]) || close,
-            close: close,
-            high: parseFloat(parts[3]) || close,
-            low: parseFloat(parts[4]) || close,
-            volume: parseFloat(parts[5]) || 0
-          });
-        }
-        if (prices.length === 0) throw new Error('解析不到有效的价格序列');
-
+        // 东方财富返回 '日期,开,收,高,低,量' 字符串，转成数组后复用统一的 K 线解析逻辑
+        var rows = d.klines.map(function (line) { return String(line).split(','); });
+        var parsed = C.parseKlineRows(rows);
+        var prices = parsed.prices;
+        var klines = parsed.klines;
         var lastK = klines[klines.length - 1];
+
         return {
           name: d.name || ('股票' + code),
           price: lastK.close,
@@ -440,40 +422,18 @@
         var kd = data && data.data && (data.data[ticker] || Object.values(data.data)[0]);
         if (!kd) throw new Error('腾讯接口未返回该股票数据');
 
-        // 健壮性：解析 K 线数据，支持多种周期对应的 Key
-        // 修正：增加对分钟线 Key 的显式支持，有些标的返回的是 ticker 对应的 key
-        var days = kd['qfq' + pKey] || kd[pKey] || kd[ticker] || kd.qfqday || kd.day || [];
-        
-        // 如果还是没找到且是分钟线，尝试在根 data 下找
-        if ((!days || days.length === 0) && isMinute) {
-            var alt = data.data[ticker] && data.data[ticker][pKey];
-            if (alt) days = alt;
-        }
+        // K 线 Key 随周期变化：日/周线为 qfqday / qfqweek，分钟线为 m60
+        var days = kd['qfq' + pKey] || kd[pKey] || kd.day || [];
         if (!Array.isArray(days) || days.length === 0) throw new Error('接口未返回 K 线历史数据');
 
-        var prices = [];
-        var klines = [];
-        for (var i = 0; i < days.length; i++) {
-          var row = days[i];
-          if (!row || !Array.isArray(row) || row.length < 3) continue;
-          var close = parseFloat(row[2]);
-          if (isNaN(close)) continue;
-          prices.push(close);
-          klines.push({
-            date: row[0],
-            open: parseFloat(row[1]) || close,
-            close: close,
-            high: parseFloat(row[3]) || close,
-            low: parseFloat(row[4]) || close,
-            volume: parseFloat(row[5]) || 0
-          });
-        }
-        if (prices.length === 0) throw new Error('解析不到有效的价格序列');
+        var parsed = C.parseKlineRows(days);
+        var prices = parsed.prices;
+        var klines = parsed.klines;
 
         // 健壮性：解析实时报价（qt），若缺失则从最后一条 K 线推导
         var qt = kd.qt || {};
         var inner = qt[ticker] || Object.values(qt)[0] || [];
-        
+
         var name = inner[1] || kd.name || ('股票' + code);
         var price = parseFloat(inner[3]) || prices[prices.length - 1];
         var prevClose = parseFloat(inner[4]) || (prices.length >= 2 ? prices[prices.length - 2] : price);
@@ -597,7 +557,6 @@
     var canvas = document.createElement('canvas');
     canvas.id = 'klineCanvas';
     canvas.setAttribute('role', 'img');
-    wrap.appendChild(canvas);
 
     card.appendChild(title);
     // 周期按钮与标注层开关跟随图表显示，置于画布上方（标注层在前，周期切换在后）
@@ -1084,16 +1043,7 @@
     ctx.textAlign = 'center';
     var step = Math.max(1, Math.floor(view.klines.length / 8));
     for (i = 0; i < view.klines.length; i += step) {
-      var rawDate = view.klines[i].date || '';
-      var dateLabel = rawDate;
-      if (/^\d{12}$/.test(rawDate)) {
-        // 分钟线时间戳 YYYYMMDDHHmm → MM-DD HH:mm
-        dateLabel = rawDate.substr(4, 2) + '-' + rawDate.substr(6, 2)
-          + ' ' + rawDate.substr(8, 2) + ':' + rawDate.substr(10, 2);
-      } else if (dateLabel.length > 5) {
-        dateLabel = dateLabel.substr(5);   // 日/周线 YYYY-MM-DD，只显示 MM-DD
-      }
-      ctx.fillText(dateLabel, xPos(i), H - 5);
+      ctx.fillText(C.formatAxisDate(view.klines[i].date), xPos(i), H - 5);
     }
 
     // 右侧均线末值标签：k 线画到最右端也不会把 MA 数值挤掉
@@ -1490,27 +1440,22 @@
     });
 
     state.code = code;
-    state.market = market;
     state.name = name;
     state.marketStatus = marketStatus;
     state.sourceName = data.source || '未知';
     state.prices = historyPrices;
-    state.klines = alignedKlines;
     state.lastPrice = lastPrice;
-    state.prevClose = prevClose;
     state.limitUp = limitUp;
     state.limitDown = limitDown;
-    state.quoteTime = data.quoteTime || '';
     state.basePrice = basePrice;
     state.digits = digits;
     state.levels = levels;
-    state.ma = maArrs;
     state.maPeriods = CONFIG.MA_PERIODS;
     state.baseMAs = baseMAs;
     state.signal = C.buildSignalSummary(maArrs, lastPrice, levels, alignedKlines, historyPrices, data.indexData ? data.indexData.prices : null);
     state.range = range;
     state.fallbackLimit = fallbackLimit;
-    state.selectedPct = null;                             // 重置选中态，避免沿用上一只股票的高亮
+    // 选中态由 renderProjectionTable 在重建表格时统一重置
 
     renderStatusBar();
     renderSignalCard();
@@ -1564,12 +1509,9 @@
     hideError();
     hideAutocomplete();
 
-    // 取消上一次未完成的查询流程
-    if (currentAbort) {
-      currentAbort.cancelled = true;
-      currentAbort.controller.abort();
-    }
-    var rec = { controller: new AbortController(), cancelled: false };
+    // 取消上一次未完成的查询流程（被取消的请求会以 err.cancelled 标记，此处不提示错误）
+    if (currentAbort) currentAbort.abort();
+    var rec = new AbortController();
     currentAbort = rec;
 
     var seq = ++querySeq;
@@ -1580,7 +1522,7 @@
     periodToolbar.classList.add('hidden');
     lastResultText = '';
 
-    fetchAllData(code, market, p, rec.controller.signal)
+    fetchAllData(code, market, p, rec.signal)
       .then(function (data) {
         if (seq !== querySeq) return;                     // 已有更新的查询，丢弃过期响应
         renderResult(code, market, data);
@@ -1611,10 +1553,7 @@
   }
 
   clearBtn.addEventListener('click', function () {
-    if (currentAbort) {
-      currentAbort.cancelled = true;
-      currentAbort.controller.abort();
-    }
+    if (currentAbort) currentAbort.abort();
     stockInput.value = '';
     resultSection.classList.remove('show');
     srToggleBar.classList.add('hidden');
@@ -1639,20 +1578,25 @@
     stockInput.focus();
   });
 
+  // 按钮短暂反馈：替换文案并高亮，1.8 秒后恢复原文案（复制与导出图片共用）
+  function flashButton(btn, text, ok) {
+    var label = btn.getAttribute('data-label') || btn.textContent;
+    btn.setAttribute('data-label', label);
+    btn.textContent = text;
+    btn.classList.toggle('is-done', !!ok);
+    if (copyTimer) clearTimeout(copyTimer);
+    copyTimer = setTimeout(function () {
+      btn.textContent = label;
+      btn.classList.remove('is-done');
+    }, 1800);
+  }
+
   // 通用复制：优先 Clipboard API，失败回退 execCommand
   function copyText(text, btn) {
     if (!text) { showError('暂无可复制的内容，请先查询'); return; }
-    var defaultLabel = btn.getAttribute('data-label') || btn.textContent;
-    btn.setAttribute('data-label', defaultLabel);
 
     function done(ok) {
-      btn.textContent = ok ? '已复制!' : '复制失败，请手动选择内容复制';
-      btn.classList.toggle('is-done', ok);
-      if (copyTimer) clearTimeout(copyTimer);
-      copyTimer = setTimeout(function () {
-        btn.textContent = defaultLabel;
-        btn.classList.remove('is-done');
-      }, 1800);
+      flashButton(btn, ok ? '已复制!' : '复制失败，请手动选择内容复制', ok);
     }
 
     if (navigator.clipboard && navigator.clipboard.writeText) {
@@ -1707,17 +1651,9 @@
       showError('图片导出失败，请改用「复制文本」或截图保存');
       return;
     }
-    var label = exportPngBtn.getAttribute('data-label') || exportPngBtn.textContent;
-    exportPngBtn.setAttribute('data-label', label);
     var filename = (state.name || 'stock') + '_' + (state.code || '') + '_均线测算.png';
     downloadDataUrl(url, filename);
-    exportPngBtn.textContent = '已导出!';
-    exportPngBtn.classList.add('is-done');
-    if (copyTimer) clearTimeout(copyTimer);
-    copyTimer = setTimeout(function () {
-      exportPngBtn.textContent = label;
-      exportPngBtn.classList.remove('is-done');
-    }, 1800);
+    flashButton(exportPngBtn, '已导出!', true);
   });
 
   /* ===== 标注层开关 ===== */

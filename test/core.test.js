@@ -125,6 +125,36 @@ test('resolveMarketStatus：行情时间非当天一律视为已收盘（节假�
   assert.equal(C.resolveMarketStatus('sh', '', at(2026, 10, FRIDAY, 10, 0)), 'intraday');
 });
 
+test('parseKlineRows：腾讯与东方财富的同构行数组统一解析，非法行被跳过', () => {
+  const rows = [
+    ['2026-10-22', '10.00', '10.50', '10.60', '9.90', '1000'],
+    ['bad'],                                                    // 字段不足 → 跳过
+    ['2026-10-23', '10.50', 'abc', '10.80', '10.40', '1200']    // 收盘价非法 → 跳过
+  ];
+  const parsed = C.parseKlineRows(rows);
+  assert.deepEqual(parsed.prices, [10.5]);
+  assert.deepEqual(parsed.klines, [{
+    date: '2026-10-22', open: 10, close: 10.5, high: 10.6, low: 9.9, volume: 1000
+  }]);
+
+  // 缺失的开/高/低/量分别回退为收盘价与 0
+  const sparse = C.parseKlineRows([['2026-10-23', '', '7.5', '', '', '']]);
+  assert.deepEqual(sparse.klines[0], {
+    date: '2026-10-23', open: 7.5, close: 7.5, high: 7.5, low: 7.5, volume: 0
+  });
+
+  assert.throws(() => C.parseKlineRows([]), /解析不到有效的价格序列/);
+  assert.throws(() => C.parseKlineRows(null), /K 线数据格式异常/);
+});
+
+test('formatAxisDate：分钟线压缩为 MM-DD HH:mm，日/周线只保留 MM-DD', () => {
+  assert.equal(C.formatAxisDate('202611171130'), '11-17 11:30');       // 腾讯分钟线时间戳
+  assert.equal(C.formatAxisDate('2026-10-23'), '10-23');              // 日/周线
+  assert.equal(C.formatAxisDate('2026-11-17 13:30'), '11-17 13:30');  // 东方财富分钟线
+  assert.equal(C.formatAxisDate(''), '');
+  assert.equal(C.formatAxisDate(null), '');
+});
+
 /* ===================== 推演区间（涨跌停自适应） ===================== */
 
 test('buildChangeList：支持非对称区间，且始终包含 0', () => {
@@ -294,9 +324,12 @@ test('computeSupportResistance：优化后的多维度计算与聚类去重', ()
   // 3. 应该包含斐波那契回撤位
   assert.ok(levels.some(l => l.label.indexOf('斐波') !== -1 || l.type === 'fibonacci'));
 
-  // 4. 检查标签合并逻辑（例如 34 既是高点也是整数关口）
+  // 4. 检查标签合并逻辑（34 既是最近高点，也是 25 日区间高点）
   const topLevel = levels.find(l => Math.abs(l.price - 34) < 1);
   assert.ok(topLevel.label.indexOf('日高点') !== -1);
+
+  // 5. 不再产生「整数关口」（心理位）标注
+  assert.ok(levels.every((l) => l.label.indexOf('整数关口') === -1), '不应再输出整数关口');
 
   assert.deepEqual(C.computeSupportResistance([], []), []);
 });
