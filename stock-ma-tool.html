@@ -361,18 +361,73 @@
   /* =========================================================
    * 5. 数据访问：超时 / 取消 / 去重 / 缓存
    * ========================================================= */
+  // 港股分钟线专用：腾讯接口不提供，改用东方财富 K 线接口（返回格式与腾讯不同）
+  function fetchHKMinuteKline(code, signal) {
+    var secid = CONFIG.HK_SECID_MARKET + '.' + code;
+    var url = CONFIG.API_URL_HK_MIN
+      + '?secid=' + secid
+      + '&fields1=f1,f2,f3,f4,f5,f6'
+      + '&fields2=f51,f52,f53,f54,f55,f56'    // 日期,开,收,高,低,量
+      + '&klt=60&fqt=1&beg=0&end=20500101&lmt=' + CONFIG.KLINE_MIN_BARS;
+
+    return fetch(url, { signal: signal })
+      .then(function (r) {
+        if (!r.ok) throw new Error('接口响应异常 ' + r.status);
+        return r.json();
+      })
+      .then(function (res) {
+        var d = res && res.data;
+        if (!d || !Array.isArray(d.klines) || d.klines.length === 0) {
+          throw new Error('东方财富接口未返回该股票数据');
+        }
+        var prices = [];
+        var klines = [];
+        for (var i = 0; i < d.klines.length; i++) {
+          var parts = String(d.klines[i]).split(',');
+          if (parts.length < 6) continue;
+          var close = parseFloat(parts[2]);
+          if (isNaN(close)) continue;
+          prices.push(close);
+          klines.push({
+            date: parts[0],                        // 'YYYY-MM-DD HH:mm'
+            open: parseFloat(parts[1]) || close,
+            close: close,
+            high: parseFloat(parts[3]) || close,
+            low: parseFloat(parts[4]) || close,
+            volume: parseFloat(parts[5]) || 0
+          });
+        }
+        if (prices.length === 0) throw new Error('解析不到有效的价格序列');
+
+        var lastK = klines[klines.length - 1];
+        return {
+          name: d.name || ('股票' + code),
+          price: lastK.close,
+          prevClose: prices.length >= 2 ? prices[prices.length - 2] : lastK.close,
+          limitUp: null,                           // 港股无涨跌停
+          limitDown: null,
+          quoteTime: lastK.date,                   // 'YYYY-MM-DD HH:mm'，供市场状态判定
+          prices: prices, klines: klines, source: '东方财富'
+        };
+      });
+  }
+
   function fetchTencentData(code, market, period, signal) {
     var ticker = market + code;
     var pKey = (typeof period === 'string') ? period : 'day';
-    var isMinute = pKey.indexOf('m') === 0;
-    
-    // 统一使用已验证支持 CORS 的 fqkline/get 接口
-    var baseUrl = CONFIG.API_URL;
-    
-    // 构建请求参数：分钟线通常不需要 qfq（前复权）标记
-    // 修正：分钟线接口请求根数通常建议设为 640（约 16 个交易日）以获得足够计算均线的历史长度
-    var count = isMinute ? 640 : CONFIG.KLINE_DAYS;
-    var param = ticker + ',' + pKey + ',,,' + count + ',qfq';
+    var isMinute = /^m\d+$/.test(pKey);
+
+    // 港股分钟线：腾讯 mkline 仅支持 A 股，改走东方财富
+    if (isMinute && market === 'hk') return fetchHKMinuteKline(code, signal);
+
+    // 分钟线与日/周线使用不同的接口与参数格式：
+    //   - 日/周线：fqkline/get?param=ticker,day,,,260,qfq
+    //   - 分钟线：mkline?param=ticker,m60,,640（fqkline/get 不支持分钟周期，会返回 bad params）
+    var baseUrl = isMinute ? CONFIG.API_URL_MIN : CONFIG.API_URL;
+    var count = isMinute ? CONFIG.KLINE_MIN_BARS : CONFIG.KLINE_DAYS;
+    var param = isMinute
+      ? (ticker + ',' + pKey + ',,' + count)
+      : (ticker + ',' + pKey + ',,,' + count + ',qfq');
     var url = baseUrl + '?param=' + param;
 
     return fetch(url, { signal: signal })
@@ -783,7 +838,7 @@
     if (totalPts <= 0) return;
 
     canvas.setAttribute('aria-label',
-      o.name + '(' + o.code + ') K线图，显示最近 ' + view.klines.length + ' 个交易日，含 MA5/MA10/MA20/MA60 均线'
+      o.name + '(' + o.code + ') K线图，显示最近 ' + view.klines.length + ' 根K线，含 MA5/MA10/MA20/MA60 均线'
       + (o.projectedPrice ? '，末位为预测收盘 ' + D(o.projectedPrice, o.digits) : ''));
 
     // 预测均线只计算一次，供坐标范围、连线与标签复用
@@ -1029,8 +1084,15 @@
     ctx.textAlign = 'center';
     var step = Math.max(1, Math.floor(view.klines.length / 8));
     for (i = 0; i < view.klines.length; i += step) {
-      var dateLabel = view.klines[i].date || '';
-      if (dateLabel.length > 5) dateLabel = dateLabel.substr(5);   // 只显示 MM-DD
+      var rawDate = view.klines[i].date || '';
+      var dateLabel = rawDate;
+      if (/^\d{12}$/.test(rawDate)) {
+        // 分钟线时间戳 YYYYMMDDHHmm → MM-DD HH:mm
+        dateLabel = rawDate.substr(4, 2) + '-' + rawDate.substr(6, 2)
+          + ' ' + rawDate.substr(8, 2) + ':' + rawDate.substr(10, 2);
+      } else if (dateLabel.length > 5) {
+        dateLabel = dateLabel.substr(5);   // 日/周线 YYYY-MM-DD，只显示 MM-DD
+      }
       ctx.fillText(dateLabel, xPos(i), H - 5);
     }
 

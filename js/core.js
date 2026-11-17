@@ -21,9 +21,13 @@
   /* ===== 配置：项目中所有硬编码常量的唯一来源 ===== */
   var CONFIG = {
     API_URL: 'https://web.ifzq.gtimg.cn/appstock/app/fqkline/get',
+    API_URL_MIN: 'https://ifzq.gtimg.cn/appstock/app/kline/mkline',   // 分钟线专用接口：fqkline/get 不支持分钟周期，会返回 bad params
+    API_URL_HK_MIN: 'https://push2his.eastmoney.com/api/qt/stock/kline/get',   // 港股分钟线专用接口：腾讯 mkline 仅支持 A 股，港股需用东方财富
+    HK_SECID_MARKET: '116',     // 东方财富市场代码前缀：116=港股（1=沪市 0=深市）
     REQUEST_TIMEOUT_MS: 8000,   // 单次行情请求超时时间
     CACHE_TTL_MS: 60000,        // 同一代码结果缓存有效期，避免重复查询重复请求
     KLINE_DAYS: 260,            // 请求并参与计算的交易日数量（需 ≥ 250 才能算出年线 MA250）
+    KLINE_MIN_BARS: 640,        // 分钟线请求根数（60 分钟线 640 根 ≈ 160 个交易日，足以覆盖多天）
     HISTORY_MAX: 20,            // 本地历史记录（localStorage）上限
     CHANGE_LIMIT: 10,           // A 股无有效涨跌停价时（退市股等）的兜底推演范围 ±N%
     CHANGE_LIMIT_HK: 30,        // 港股无涨跌停限制，兜底推演范围放宽到 ±N%
